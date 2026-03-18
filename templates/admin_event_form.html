@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Új esemény létrehozása</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --primary: #0f172a;
+      --ok-bg: #dcfce7;
+      --ok-text: #166534;
+      --err-bg: #fee2e2;
+      --err-text: #991b1b;
+      --info-bg: #e0f2fe;
+      --info-text: #075985;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      --radius: 20px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 36px;
+      line-height: 1.08;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 14px;
+    }
+
+    .btn, button {
+      display: inline-block;
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 16px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      transition: 0.15s ease;
+    }
+
+    .btn-primary, button {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+
+    .btn:hover, button:hover {
+      transform: translateY(-1px);
+      opacity: 0.97;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .field {
+      margin-bottom: 16px;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .field input {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 15px;
+      outline: none;
+    }
+
+    .field input:focus {
+      border-color: #94a3b8;
+      box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.15);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .flash {
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      font-weight: 700;
+    }
+
+    .flash.success { background: var(--ok-bg); color: var(--ok-text); }
+    .flash.error { background: var(--err-bg); color: var(--err-text); }
+    .flash.info { background: var(--info-bg); color: var(--info-text); }
+
+    .notice {
+      border-radius: 16px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .notice.info { background: var(--info-bg); color: var(--info-text); }
+
+    .rules {
+      margin-top: 18px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .rule {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: #f8fafc;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .small {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    @media (max-width: 760px) {
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 30px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div>
+        <h1>Új esemény létrehozása</h1>
+        <p>Itt hozod létre azt az eseményt, amelyhez a publikus jelentkezési oldal és az automatikus csapatbeosztás tartozik.</p>
+      </div>
+
+      <div class="actions">
+        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary">Vissza a dashboardra</a>
+        <a href="{{ url_for('home') }}" class="btn btn-secondary">Publikus oldal</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <span class="badge">Egyszerű szervezői űrlap</span>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <div class="notice info">
+        A jelentkezési határidőt a rendszer automatikusan az esemény időpontja előtti <strong>6 órára</strong> állítja be.
+      </div>
+
+      <form method="post">
+        <div class="field">
+          <label for="title">Esemény neve</label>
+          <input id="title" name="title" type="text" placeholder="Pl. Haveri Triatlon #1">
+          <div class="small">Ha üresen hagyod, a rendszer alapértelmezett címet fog használni.</div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="event_date">Esemény dátuma</label>
+            <input id="event_date" name="event_date" type="date" required>
+          </div>
+
+          <div class="field">
+            <label for="event_time">Esemény kezdési ideje</label>
+            <input id="event_time" name="event_time" type="time" required>
+          </div>
+        </div>
+
+        <button type="submit">Esemény létrehozása</button>
+      </form>
+
+      <div class="rules">
+        <div class="rule">
+          Minimum indulás: <strong>3 csapat / 6 fő</strong>
+        </div>
+        <div class="rule">
+          Maximum: <strong>5 csapat / 20 fő</strong>
+        </div>
+        <div class="rule">
+          Az első 10 jelentkezőből alakul ki az 5 db 2 fős alapcsapat.
+        </div>
+        <div class="rule">
+          A további jelentkezők véletlenszerűen bővítik a csapatokat 3, majd 4 főre.
+        </div>
+        <div class="rule">
+          A hiányos bővítési körök a jelentkezési határidő lejártakor automatikusan szétosztásra kerülnek.
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

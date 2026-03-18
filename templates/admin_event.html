@@ -1,0 +1,79 @@
+
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h1 class="h2 mb-1">{{ event.title }}</h1>
+    <p class="text-muted mb-1">Kezdés: {{ event.start_at.strftime('%Y-%m-%d %H:%M') }}</p>
+    <p class="text-muted mb-0">Jelentkezési határidő: {{ event.registration_deadline.strftime('%Y-%m-%d %H:%M') }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-dark" href="{{ url_for('event_page', slug=event.slug) }}">Publikus oldal</a>
+    <a class="btn btn-dark" href="{{ url_for('admin_print', event_id=event.id) }}">Pontozólap</a>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm rounded-4">
+      <div class="card-body">
+        <h2 class="h4 mb-3">Csapatok</h2>
+        <form method="post" class="d-grid gap-3">
+          {% for team in event.teams %}
+            <div class="border rounded-4 p-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong>{{ format_team_name(team) }}</strong>
+                <span class="badge text-bg-dark">{{ team_members(team)|length }} fő</span>
+              </div>
+              <input class="form-control mb-3" name="team_name_{{ team.id }}" value="{{ team.name or '' }}" placeholder="Csapatnév">
+              <ul class="list-group">
+                {% for member in team_members(team) %}
+                  <li class="list-group-item d-flex justify-content-between">
+                    <span>{{ member.name }}</span>
+                    <span class="text-muted">{{ member.email }}</span>
+                  </li>
+                {% else %}
+                  <li class="list-group-item text-muted">Még nincs kiosztott játékos.</li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endfor %}
+          <button class="btn btn-dark">Csapatnevek mentése</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+      <div class="card-body">
+        <h2 class="h4 mb-3">Összkép</h2>
+        <p><strong>Összes jelentkező:</strong> {{ event.registrations|length }}/20</p>
+        <p><strong>3. körös pool:</strong> {{ pending_round_count(event, 3) }} fő</p>
+        <p class="mb-0"><strong>4. körös pool:</strong> {{ pending_round_count(event, 4) }} fő</p>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm rounded-4">
+      <div class="card-body">
+        <h2 class="h4 mb-3">Jelentkezők</h2>
+        <ul class="list-group">
+          {% for reg in event.registrations %}
+            <li class="list-group-item">
+              <div class="fw-semibold">{{ reg.name }}</div>
+              <div class="small text-muted">{{ reg.email }}</div>
+              {% if reg.team %}
+                <div class="small mt-1">Kiosztva ide: {{ format_team_name(reg.team) }}</div>
+              {% elif reg.pending_level %}
+                <div class="small mt-1 text-warning">{{ reg.pending_level }}. szintű várakozó pool</div>
+              {% endif %}
+            </li>
+          {% else %}
+            <li class="list-group-item text-muted">Még nincs jelentkező.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

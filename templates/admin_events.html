@@ -1,0 +1,35 @@
+
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h2 mb-1">Saját események</h1>
+    <p class="text-muted mb-0">Itt tudsz új eseményt létrehozni és kezelni.</p>
+  </div>
+  <a class="btn btn-dark" href="{{ url_for('admin_new_event') }}">Új esemény</a>
+</div>
+
+<div class="row g-3">
+  {% for event in events %}
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm rounded-4 h-100">
+        <div class="card-body">
+          <h2 class="h4">{{ event.title }}</h2>
+          <p class="mb-1"><strong>Kezdés:</strong> {{ event.start_at.strftime('%Y-%m-%d %H:%M') }}</p>
+          <p class="mb-1"><strong>Határidő:</strong> {{ event.registration_deadline.strftime('%Y-%m-%d %H:%M') }}</p>
+          <p class="mb-3"><strong>Jelentkezők:</strong> {{ event.registrations|length }}/20</p>
+          <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-dark btn-sm" href="{{ url_for('event_page', slug=event.slug) }}">Publikus oldal</a>
+            <a class="btn btn-dark btn-sm" href="{{ url_for('admin_event', event_id=event.id) }}">Kezelés</a>
+            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_print', event_id=event.id) }}">Pontozólap</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <div class="col-12">
+      <div class="alert alert-secondary">Még nincs eseményed.</div>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

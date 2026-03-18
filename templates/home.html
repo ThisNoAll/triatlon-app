@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if event %}{{ event["title"] }}{% else %}Triatlon{% endif %}</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --primary: #0f172a;
+      --accent: #16a34a;
+      --warn-bg: #fef3c7;
+      --warn-text: #92400e;
+      --ok-bg: #dcfce7;
+      --ok-text: #166534;
+      --err-bg: #fee2e2;
+      --err-text: #991b1b;
+      --info-bg: #e0f2fe;
+      --info-text: #075985;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      --radius: 20px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .hero {
+      background: var(--card);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 24px;
+      align-items: start;
+      padding: 40px 0;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      font-size: 46px;
+      line-height: 1.05;
+      margin: 0 0 16px;
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      font-size: 28px;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    p {
+      margin: 0 0 14px;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 22px;
+      box-shadow: var(--shadow);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 22px;
+    }
+
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    .stat-value {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--text);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.3fr 0.7fr;
+      gap: 24px;
+      margin-top: 28px;
+    }
+
+    .grid-2-equal {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-top: 28px;
+    }
+
+    .teams-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .team-card {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    .team-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #f1f5f9;
+      color: #334155;
+      white-space: nowrap;
+    }
+
+    .pill.ok {
+      background: var(--ok-bg);
+      color: var(--ok-text);
+    }
+
+    .member {
+      border-radius: 14px;
+      padding: 10px 12px;
+      background: #f8fafc;
+      border: 1px solid #edf2f7;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .member.hidden {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .member.empty {
+      color: #94a3b8;
+    }
+
+    .flash-wrap {
+      margin-bottom: 18px;
+    }
+
+    .flash {
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+
+    .flash.success { background: var(--ok-bg); color: var(--ok-text); }
+    .flash.error { background: var(--err-bg); color: var(--err-text); }
+    .flash.info { background: var(--info-bg); color: var(--info-text); }
+
+    .notice {
+      border-radius: 16px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .notice.warn { background: var(--warn-bg); color: var(--warn-text); }
+    .notice.ok { background: var(--ok-bg); color: var(--ok-text); }
+    .notice.info { background: var(--info-bg); color: var(--info-text); }
+
+    .btn, button {
+      display: inline-block;
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 16px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      transition: 0.15s ease;
+    }
+
+    .btn-primary, button {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+
+    .btn:hover, button:hover {
+      transform: translateY(-1px);
+      opacity: 0.96;
+    }
+
+    form {
+      margin: 0;
+    }
+
+    .field {
+      margin-bottom: 12px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .field input {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 15px;
+      outline: none;
+    }
+
+    .field input:focus {
+      border-color: #94a3b8;
+      box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.15);
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .stack > * + * {
+      margin-top: 12px;
+    }
+
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .mini-box {
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    .mini-box .k {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px;
+      letter-spacing: .04em;
+    }
+
+    .mini-box .v {
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .proposal-box {
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+    }
+
+    .actions-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .small {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .section-title {
+      margin-bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 16px;
+    }
+
+    @media (max-width: 980px) {
+      .hero-grid,
+      .grid-2,
+      .grid-2-equal,
+      .teams-grid,
+      .stats,
+      .mini-grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <div class="container">
+      <div class="topbar">
+        <div class="small">Haveri Triatlon – jelentkezési rendszer</div>
+        <a href="{{ url_for('admin_login') }}" class="btn btn-secondary">Szervezői belépés</a>
+      </div>
+
+      {% if not event %}
+        <div class="card">
+          <span class="badge">Nincs aktív esemény</span>
+          <h1>Még nincs létrehozva rendezvény.</h1>
+          <p>Először a szervezőnek kell létrehoznia egy eseményt. Utána itt fog megjelenni a publikus jelentkezési oldal.</p>
+        </div>
+      {% else %}
+        <div class="hero-grid">
+          <div>
+            <span class="badge">{{ event["title"] }}</span>
+            <h1>Csocsó. Darts. Wii.<br>Egy nevezés, automatikus csapatbeosztás.</h1>
+            <p>
+              A játék minimum <strong>3 csapattal, azaz 6 fővel</strong> indul. Maximum <strong>5 csapat</strong> vehet részt,
+              összesen legfeljebb <strong>20 fő</strong>. A jelentkezés az esemény előtt <strong>6 órával</strong> zár.
+            </p>
+            <p>
+              Az első 10 jelentkezőből alakul ki az 5 db 2 fős csapat. A további jelentkezők véletlenszerűen bővítik
+              a meglévő csapatokat 3, majd 4 főig. Ha egy bővítési kör nem telik be, a rendszer a határidő lejártakor
+              automatikusan osztja szét a bent maradt plusz játékosokat.
+            </p>
+
+            <div class="stats">
+              <div class="stat">
+                <div class="stat-label">Esemény ideje</div>
+                <div class="stat-value">{{ format_dt_display(event["event_at"]) }}</div>
+              </div>
+              <div class="stat">
+                <div class="stat-label">Határidő</div>
+                <div class="stat-value">{{ format_dt_display(event["registration_deadline"]) }}</div>
+              </div>
+              <div class="stat">
+                <div class="stat-label">Jelentkezők</div>
+                <div class="stat-value">{{ total_registrations }}/{{ max_players }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Gyors jelentkezés</h2>
+
+            <div class="flash-wrap">
+              {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                  {% for category, message in messages %}
+                    <div class="flash {{ category }}">{{ message }}</div>
+                  {% endfor %}
+                {% endif %}
+              {% endwith %}
+            </div>
+
+            {% if approved_start %}
+              <div class="notice ok">
+                A minimum indulási feltétel teljesült: legalább 6 fő már összejött.
+              </div>
+            {% else %}
+              <div class="notice warn">
+                A játék minimum 6 főtől indul. Jelenleg még nincs meg a minimum létszám.
+              </div>
+            {% endif %}
+
+            {% if not can_register %}
+              <div class="notice warn">
+                A jelentkezés lezárult, vagy a maximális létszám betelt.
+              </div>
+            {% else %}
+              {% if google_enabled %}
+                <div class="actions-row" style="margin-bottom: 12px;">
+                  <a class="btn btn-secondary" href="{{ url_for('google_login') }}">Jelentkezés Google-fiókkal</a>
+                </div>
+              {% endif %}
+
+              <form method="post" action="{{ url_for('register_email') }}">
+                <div class="field">
+                  <label for="name">Név</label>
+                  <input id="name" name="name" type="text" placeholder="Teljes név" required>
+                </div>
+                <div class="field">
+                  <label for="email">Email cím</label>
+                  <input id="email" name="email" type="email" placeholder="email@pelda.hu" required>
+                </div>
+                <button type="submit">Jelentkezés név + email alapján</button>
+              </form>
+
+              <p class="muted" style="margin-top: 12px;">
+                A rendszer a saját státuszodat neked megmutatja, de a félkész csapatoknál mások nem látják, hogy pontosan kik vannak bent.
+              </p>
+            {% endif %}
+
+            <div class="mini-grid">
+              <div class="mini-box">
+                <div class="k">Minimum indulás</div>
+                <div class="v">{{ min_players }} fő</div>
+              </div>
+              <div class="mini-box">
+                <div class="k">3. körös pool</div>
+                <div class="v">{{ stage3_pending_count }}/5</div>
+              </div>
+              <div class="mini-box">
+                <div class="k">4. körös pool</div>
+                <div class="v">{{ stage4_pending_count }}/5</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if event %}
+    <div class="container">
+      <div class="grid-2">
+        <div class="card">
+          <div class="section-title">
+            <h2>Csapatok</h2>
+            <div class="small">Publikus nézet</div>
+          </div>
+
+          <div class="notice info">
+            A csapatok létszáma mindig látszik. A félkész bővítési szinteknél az új tag neve rejtve marad, hogy ne lehessen taktikázni.
+          </div>
+
+          <div class="teams-grid">
+            {% for team in public_teams %}
+              <div class="team-card">
+                <div class="team-top">
+                  <div>
+                    <h3>
+                      {% if team.team_name %}
+                        {{ team.team_name }}
+                      {% else %}
+                        Csapat {{ team.team_number }}
+                      {% endif %}
+                    </h3>
+                    <div class="small">{{ team.count }}/{{ team.capacity }} fő</div>
+                  </div>
+
+                  {% if team.count >= 2 and team.count == team.capacity %}
+                    <span class="pill ok">Publikus</span>
+                  {% else %}
+                    <span class="pill">Folyamatban</span>
+                  {% endif %}
+                </div>
+
+                {% if team.count == 0 %}
+                  <div class="member empty">Még nincs jelentkező</div>
+
+                {% elif team.count == 1 %}
+                  <div class="member hidden">1 játékos már bent van, de a neve még rejtve van.</div>
+                  <div class="member empty">Várakozás a 2. főre</div>
+
+                {% elif team.count == 2 and team.capacity == 2 %}
+                  {% for name in team.visible_names %}
+                    <div class="member">{{ name }}</div>
+                  {% endfor %}
+
+                {% elif team.count == 2 and team.capacity == 3 %}
+                  {% for name in team.visible_names %}
+                    <div class="member">{{ name }}</div>
+                  {% endfor %}
+                  <div class="member hidden">A 3. hely még feltöltés alatt van.</div>
+
+                {% elif team.count == 3 and team.capacity == 3 %}
+                  {% for name in team.visible_names %}
+                    <div class="member">{{ name }}</div>
+                  {% endfor %}
+
+                {% elif team.count == 3 and team.capacity == 4 %}
+                  {% for name in team.visible_names[:3] %}
+                    <div class="member">{{ name }}</div>
+                  {% endfor %}
+                  <div class="member hidden">A 4. hely még feltöltés alatt van.</div>
+
+                {% elif team.count == 4 %}
+                  {% for name in team.visible_names %}
+                    <div class="member">{{ name }}</div>
+                  {% endfor %}
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="card">
+            <h2>Saját státusz</h2>
+
+            {% if not my_status %}
+              <div class="notice info">
+                Ha jelentkeztél, ugyanebben a böngészőben itt fogod látni a saját státuszodat.
+              </div>
+            {% else %}
+              <div class="notice ok">
+                {{ my_status.status_label }}
+              </div>
+
+              <div class="mini-grid" style="grid-template-columns: 1fr;">
+                <div class="mini-box">
+                  <div class="k">Név</div>
+                  <div class="v" style="font-size: 18px;">{{ my_status.registration["participant_name"] }}</div>
+                </div>
+                <div class="mini-box">
+                  <div class="k">Email</div>
+                  <div class="v" style="font-size: 16px;">{{ my_status.registration["participant_email"] }}</div>
+                </div>
+
+                {% if my_status.team_number %}
+                  <div class="mini-box">
+                    <div class="k">Csapat</div>
+                    <div class="v" style="font-size: 18px;">
+                      {% if my_status.team_name %}
+                        {{ my_status.team_name }}
+                      {% else %}
+                        Csapat {{ my_status.team_number }}
+                      {% endif %}
+                    </div>
+                  </div>
+
+                  <div class="mini-box">
+                    <div class="k">Csapatlétszám</div>
+                    <div class="v" style="font-size: 18px;">{{ my_status.team_size }} fő</div>
+                  </div>
+                {% endif %}
+              </div>
+
+              {% if my_status.pending_proposal %}
+                {% set proposal = my_status.pending_proposal %}
+                <div class="proposal-box" style="margin-top: 14px;">
+                  <h3>Csapatnév jóváhagyása</h3>
+                  <p>
+                    Javasolt név: <strong>{{ proposal["proposed_name"] }}</strong>
+                  </p>
+
+                  <div class="actions-row">
+                    <form method="post" action="{{ url_for('vote_team_name') }}">
+                      <input type="hidden" name="proposal_id" value="{{ proposal['id'] }}">
+                      <input type="hidden" name="vote" value="approve">
+                      <button type="submit">Elfogadom</button>
+                    </form>
+
+                    <form method="post" action="{{ url_for('vote_team_name') }}">
+                      <input type="hidden" name="proposal_id" value="{{ proposal['id'] }}">
+                      <input type="hidden" name="vote" value="reject">
+                      <button type="submit" class="btn-secondary">Nem kérem</button>
+                    </form>
+                  </div>
+                </div>
+              {% endif %}
+
+              {% if my_status.can_propose_team_name %}
+                <div class="proposal-box" style="margin-top: 14px;">
+                  <h3>Csapatnév javaslása</h3>
+                  <p class="small">
+                    Csapatnév csak legalább 2 fős csapatnál adható meg. Egy eseményen belül nem lehet két azonos csapatnév.
+                  </p>
+
+                  <form method="post" action="{{ url_for('propose_team_name') }}">
+                    <div class="field">
+                      <label for="team_name">Új csapatnév</label>
+                      <input id="team_name" name="team_name" type="text" placeholder="Pl. Villámkiflik" required>
+                    </div>
+                    <button type="submit">Csapatnév javaslása</button>
+                  </form>
+                </div>
+              {% endif %}
+            {% endif %}
+          </div>
+
+          <div class="card">
+            <h2>Szabályok röviden</h2>
+            <div class="stack">
+              <p>Minimum indulás: <strong>3 csapat / 6 fő</strong>.</p>
+              <p>Maximum létszám: <strong>20 fő</strong>.</p>
+              <p>Az első 10 jelentkezőből alakul ki az 5 db 2 fős alapcsapat.</p>
+              <p>A további jelentkezők véletlenszerűen bővítik a csapatokat 3, majd 4 főre.</p>
+              <p>A jelentkezés az esemény előtt <strong>6 órával</strong> lezár.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</body>
+</html>

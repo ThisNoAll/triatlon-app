@@ -1,0 +1,132 @@
+
+{% extends "base.html" %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="hero-box p-4 bg-white rounded-4 border shadow-sm mb-4">
+      <span class="badge text-bg-dark mb-3">Haveri Triatlon</span>
+      <h1 class="display-6 fw-bold mb-3">{{ event.title }}</h1>
+      <p class="lead text-muted">Egyszerű jelentkezési rendszer automatikus csapatbeosztással.</p>
+
+      <div class="row g-3 mt-2">
+        <div class="col-md-4">
+          <div class="stat-box">
+            <div class="small text-muted">Kezdés</div>
+            <div class="fw-bold">{{ event.start_at.strftime('%Y-%m-%d %H:%M') }}</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="stat-box">
+            <div class="small text-muted">Határidő</div>
+            <div class="fw-bold">{{ event.registration_deadline.strftime('%Y-%m-%d %H:%M') }}</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="stat-box">
+            <div class="small text-muted">Létszám</div>
+            <div class="fw-bold">{{ event.registrations|length }}/20</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+      <div class="card-body">
+        <h2 class="h4 mb-3">Jelentkezés</h2>
+        {% if now() >= event.registration_deadline %}
+          <div class="alert alert-warning mb-0">A jelentkezés lezárult.</div>
+        {% else %}
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            <a class="btn btn-outline-dark" href="{{ url_for('google_login') }}">Google belépés</a>
+            {% if google_user %}
+              <span class="badge text-bg-success d-flex align-items-center">{{ google_user.email }}</span>
+            {% endif %}
+          </div>
+
+          <form method="post" action="{{ url_for('register', slug=event.slug) }}" class="d-grid gap-3">
+            {% if google_user %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="use_google" value="1" id="useGoogle">
+                <label class="form-check-label" for="useGoogle">
+                  Jelentkezés a Google fiókom adataival
+                </label>
+              </div>
+            {% endif %}
+
+            <input class="form-control form-control-lg" name="name" placeholder="Név">
+            <input class="form-control form-control-lg" name="email" type="email" placeholder="Email cím">
+            <input class="form-control form-control-lg" name="team_name_suggestion" placeholder="Csapatnév javaslat (nem kötelező)">
+            <div class="small text-muted">
+              A csapatnév-javaslatból az első használható név kerül a csapatra.
+            </div>
+            <button class="btn btn-dark btn-lg">Jelentkezem</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm rounded-4">
+      <div class="card-body">
+        <h2 class="h4 mb-3">Publikus csapatok</h2>
+        <div class="row g-3">
+          {% for team in event.teams %}
+            <div class="col-md-6">
+              <div class="border rounded-4 p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <strong>{{ format_team_name(team) }}</strong>
+                  <span class="badge text-bg-dark">{{ team_members(team)|length }} fő</span>
+                </div>
+                <ul class="list-group">
+                  {% for member in team_members(team) %}
+                    <li class="list-group-item d-flex justify-content-between">
+                      <span>{{ member.name }}</span>
+                      <span class="text-muted">{{ member.provider }}</span>
+                    </li>
+                  {% else %}
+                    <li class="list-group-item text-muted">Még nincs kialakult csapat.</li>
+                  {% endfor %}
+                </ul>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        {% if pending_round_count(event, 3) > 0 %}
+          <div class="alert alert-secondary mt-4 mb-0">
+            3. fős bővítés folyamatban: {{ pending_round_count(event, 3) }}/5 fő
+          </div>
+        {% endif %}
+        {% if pending_round_count(event, 4) > 0 %}
+          <div class="alert alert-secondary mt-3 mb-0">
+            4. fős bővítés folyamatban: {{ pending_round_count(event, 4) }}/5 fő
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+      <div class="card-body">
+        <h2 class="h4 mb-3">Szabályok röviden</h2>
+        <ol class="mb-0">
+          <li>Maximum 5 csapat indulhat.</li>
+          <li>Az első 10 főből 5 db 2 fős csapat alakul.</li>
+          <li>Az extra emberek a 3. és 4. fős bővítési körbe kerülnek.</li>
+          <li>Ha egy körben összejön 5 fő, a rendszer azonnal random szétosztja őket.</li>
+          <li>Ha a kör nem telik be, a határidő lejártakor a bent maradt embereket osztja ki random.</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm rounded-4">
+      <div class="card-body">
+        <h2 class="h4 mb-3">Miért ilyen a logika?</h2>
+        <p class="mb-0 text-muted">
+          Azért, hogy ne lehessen kivárással vagy taktikázással befolyásolni, ki melyik csapatba kerül.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
