@@ -1,1 +1,0 @@
-Mindig csak annyi csapatot jelenítsen meg amennyi létrejött. Egyértelműen és láthatóan írja ki, ha még nem jött össze a minimum létszám (3 csapat 6 fővel9, illetve azt is, ha már igen.

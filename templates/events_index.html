@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Események</title>
+  <style>
+    :root { --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --muted:#64748b; --line:#e2e8f0; --primary:#0f172a; --ok-bg:#dcfce7; --ok-text:#166534; --warn-bg:#fef3c7; --warn-text:#92400e; --shadow:0 10px 30px rgba(15,23,42,.08); --radius:20px; }
+    * { box-sizing:border-box; } body { margin:0; font-family:Arial, Helvetica, sans-serif; background:var(--bg); color:var(--text); }
+    .container { max-width:1200px; margin:0 auto; padding:24px; }
+    .hero { padding:28px 0 16px; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:24px; box-shadow:var(--shadow); }
+    .grid { display:grid; grid-template-columns:repeat(2, 1fr); gap:18px; margin-top:24px; }
+    .badge { display:inline-block; padding:8px 14px; border-radius:999px; background:#eef2ff; color:#3730a3; font-size:14px; font-weight:700; margin-bottom:14px; }
+    .event-card { background:#fff; border:1px solid var(--line); border-radius:18px; padding:18px; display:flex; flex-direction:column; gap:12px; }
+    .meta { color:var(--muted); line-height:1.5; font-size:14px; }
+    .pill { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; background:#f1f5f9; color:#334155; }
+    .pill.ok { background:var(--ok-bg); color:var(--ok-text); }
+    .pill.warn { background:var(--warn-bg); color:var(--warn-text); }
+    .btn { display:inline-block; border:0; border-radius:14px; padding:12px 16px; font-size:15px; font-weight:700; cursor:pointer; text-decoration:none; }
+    .btn-primary { background:var(--primary); color:#fff; }
+    .btn-secondary { background:#fff; color:var(--text); border:1px solid var(--line); }
+    h1 { margin:0 0 12px; font-size:42px; line-height:1.05; }
+    h2 { margin:0; font-size:22px; }
+    p { margin:0; color:var(--muted); line-height:1.55; }
+    .stats { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-top:18px; }
+    .stat { background:#f8fafc; border:1px solid var(--line); border-radius:14px; padding:14px; }
+    .stat .k { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; }
+    .stat .v { font-size:18px; font-weight:800; }
+    @media (max-width: 900px) { .grid, .stats { grid-template-columns:1fr; } h1 { font-size:32px; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="hero">
+      <div class="topbar">
+        <div class="meta">Publikus eseménylista</div>
+        <a href="{{ url_for('admin_login') }}" class="btn btn-secondary">Szervezői belépés</a>
+      </div>
+      <div class="card">
+        <span class="badge">Több esemény, párhuzamosan</span>
+        <h1>Válassz egy eseményt, és nyisd meg a saját nevezési oldalát.</h1>
+        <p>Minden esemény külön oldalon fut, saját csapatokkal, nevezőkkel és admin kezelőfelülettel.</p>
+        <div class="stats">
+          <div class="stat"><div class="k">Minimum indulás</div><div class="v">{{ min_players }} fő</div></div>
+          <div class="stat"><div class="k">Maximum létszám</div><div class="v">{{ max_players }} fő</div></div>
+          <div class="stat"><div class="k">Publikus elérés</div><div class="v">Eseményenként külön URL</div></div>
+        </div>
+      </div>
+    </div>
+    {% if events %}
+      <div class="grid">
+        {% for event in events %}
+          <div class="event-card">
+            <div>
+              <div style="margin-bottom:10px;">{% if event["is_closed"] == 1 %}<span class="pill warn">Lezárt</span>{% else %}<span class="pill ok">Nyitott</span>{% endif %}</div>
+              <h2>{{ event["title"] }}</h2>
+            </div>
+            {% if event["description"] %}<p>{{ event["description"] }}</p>{% endif %}
+            <div class="meta">
+              Esemény ideje: <strong>{{ format_dt_display(event["event_at"]) }}</strong><br>
+              Jelentkezési határidő: <strong>{{ format_dt_display(event["registration_deadline"]) }}</strong><br>
+              {% if event["has_fee"] == 1 %}Nevezési díj: <strong>{{ event["fee_amount"] }} Ft</strong>{% else %}Ingyenes esemény{% endif %}
+            </div>
+            <div><a href="{{ url_for('event_home', slug=event['slug']) }}" class="btn btn-primary">Esemény megnyitása</a></div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="card"><h2>Még nincs esemény</h2><p>Ha ez az első indítás, a szervezőnek először létre kell hoznia legalább egy eseményt.</p></div>
+    {% endif %}
+  </div>
+</body>
+</html>

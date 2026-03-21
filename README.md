@@ -1,246 +1,132 @@
-# Triatlon jelentkezési rendszer – egyszerű Flask verzió
+# Triatlon jelentkezési rendszer
 
-Ez egy szándékosan leegyszerűsített, könnyen átlátható webapp.
+Egyszerű Flask alkalmazás több, párhuzamosan futó esemény kezelésére.
 
 ## Mit tud?
-- szervező létrehoz egy eseményt
-- az esemény kezdete előtt **6 órával automatikusan lezár a jelentkezés**
-- jelentkezés:
-  - Google fiókkal (ha beállítod)
-  - vagy név + email alapján
-- maximum **5 csapat**
-- az első **10 főből** kialakul **5 db 2 fős csapat**
-- ezután a rendszer:
-  - a 11–15. jelentkezőt a **3. fős bővítési körbe** teszi
-  - ha összejön 5 ember, azonnal random szétosztja őket az 5 csapatba
-  - ha nem, akkor a határidő lejártakor osztja szét őket random
-- ugyanez megy a **4. fővel** a 16–20. játékos között
-- maximum **20 játékos**
-- a jelentkező megadhat csapatnév-javaslatot
-- a szervező tudja szerkeszteni a csapatneveket
-- van **nyomtatható pontozólap**
 
----
+- a szervező több eseményt tud létrehozni és párhuzamosan kezelni
+- minden eseménynek saját publikus URL-je van: `/e/<slug>`
+- jelentkezés név + email alapján
+- opcionális Google bejelentkezés
+- maximum 5 csapat / 20 fő eseményenként
+- automatikus csapatképzés 2, majd 3, majd 4 fős körökben
+- esemény előtt 6 órával automatikus nevezéslezárás
+- csapatnév-javaslat és csapatszintű szavazás
+- admin csapatkezelés, fizetéskezelés és nyomtatható pontozólap
 
-# 1. HELYI FUTTATÁS – a legegyszerűbb mód
+## URL modell
 
-## 1. lépés – Python telepítése
-Legyen fent a gépeden Python 3.11 vagy újabb.
+- `/` publikus eseménylista
+- `/e/<slug>` adott esemény publikus oldala
+- `/admin` összes esemény admin listája
+- `/admin/events/<id>` adott esemény admin dashboardja
 
-## 2. lépés – a projekt megnyitása
-Csomagold ki a ZIP-et, és nyisd meg a mappát terminálban.
+## Helyi futtatás
 
-## 3. lépés – virtuális környezet
+### 1. Python
+
+Python 3.11 vagy újabb ajánlott.
+
+### 2. Virtuális környezet
+
 Windows:
+
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
 ```
 
-Mac / Linux:
+Linux / macOS:
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-## 4. lépés – csomagok telepítése
+### 3. Függőségek
+
 ```bash
 pip install -r requirements.txt
 ```
 
-## 5. lépés – .env létrehozása
-Másold le a `.env.example` fájlt `.env` néven.
+### 4. .env
 
-Minimum ezt állítsd be benne:
-- `SECRET_KEY`
-- `ADMIN_PASSWORD`
+Készíts `.env` fájlt a [`.env.example`](/abs/path/c:/PROJEKTEK/triatlon/.env.example) alapján.
 
-Ha most csak gyorsan kipróbálnád, a `DATABASE_URL` maradhat:
+Minimum:
+
 ```env
-DATABASE_URL=sqlite:///app.db
+SECRET_KEY=valami-hosszu-titkos-kulcs
+ADMIN_PASSWORD=valami-eros-jelszo
+DATABASE_PATH=triatlon.sqlite3
 ```
 
-## 6. lépés – indítás
+### 5. Indítás
+
 ```bash
 python app.py
 ```
 
-A böngészőben nyisd meg:
+Ezután:
+
 ```text
 http://127.0.0.1:5000
 ```
 
----
+## Admin belépés
 
-# 2. SZERVEZŐI BELÉPÉS
+Admin oldal:
 
-A szervezői oldal:
 ```text
 /admin/login
 ```
 
-A jelszó az `.env` fájlban lévő:
-```env
-ADMIN_PASSWORD=...
-```
+Az admin jelszó az `.env` fájl `ADMIN_PASSWORD` értéke.
 
-Belépés után:
-- létrehozhatsz eseményt
-- láthatod a jelentkezőket
-- átírhatod a csapatneveket
-- megnyithatod a nyomtatható pontozólapot
+## Google login
 
----
+Ha szeretnéd bekapcsolni:
 
-# 3. GOOGLE LOGIN BEÁLLÍTÁSA (opcionális)
-
-Ha ezt nem állítod be, a név+email jelentkezés akkor is működik.
-
-## 1. lépés
-Menj a Google Cloud Console felületre.
-
-## 2. lépés
-Hozz létre OAuth 2.0 Client ID-t.
-
-## 3. lépés
-Authorized redirect URI-nak add meg:
-
-Helyi futtatásnál:
-```text
-http://127.0.0.1:5000/auth/google/callback
-```
-
-## 4. lépés
-Másold be az `.env` fájlba:
 ```env
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 ```
 
-Újraindítás után működik a Google bejelentkezés.
+Helyi callback példa:
 
----
-
-# 4. RENDERES ÉLESÍTÉS – nagyon egyszerűen
-
-## 1. lépés – GitHub
-Tedd fel ezt a projektet egy GitHub repositoryba.
-
-## 2. lépés – Render fiók
-Lépj be a Renderre.
-
-## 3. lépés – New Web Service
-Válaszd:
-- **New**
-- **Web Service**
-- csatlakoztasd a GitHub repót
-
-## 4. lépés – alap beállítások
-A Rendernél állítsd be:
-
-### Build Command
-```bash
-pip install -r requirements.txt
-```
-
-### Start Command
-```bash
-gunicorn app:app
-```
-
-## 5. lépés – környezeti változók
-Add meg ezeket:
-
-```env
-SECRET_KEY=valami-hosszu-eros-kulcs
-ADMIN_PASSWORD=egy-eros-admin-jelszo
-```
-
-### adatbázis
-A legegyszerűbb helyi próba SQLite-tal megy, de Renderen **inkább PostgreSQL-t használj**.
-
-Hozz létre Renderen egy PostgreSQL adatbázist, majd a kapott `External Database URL`-t add meg:
-```env
-DATABASE_URL=postgresql://...
-```
-
-## 6. lépés – Google login (ha kell)
-A Renderes domainhez add hozzá a callback URL-t a Google Cloud Console-ban, pl:
 ```text
-https://A-TE-APPOD.onrender.com/auth/google/callback
+http://127.0.0.1:5000/e/az-esemeny-slugja/auth/google/callback
 ```
 
-Majd Render env-ben:
-```env
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
+Fontos: a callback URL esemény-specifikus, mert a publikus útvonal is eseményenként külön él.
+
+## Csapatképzési logika
+
+- 1-10. aktív jelentkező: 5 darab 2 fős csapat
+- 11-15. aktív jelentkező: 3. körös bővítési pool
+- 16-20. aktív jelentkező: 4. körös bővítési pool
+- ha egy pool eléri az 5 főt, a rendszer azonnal szétosztja őket az 5 csapatba
+- ha nem telik meg, a rendszer lezáráskor véglegesíti
+
+## Tesztek
+
+Futtatás:
+
+```bash
+.\.venv\Scripts\python -m unittest discover -s tests -v
 ```
 
-## 7. lépés – Deploy
-Kattints deployra.
+## Oracle Cloud deploy
 
-Kész.
+A projekt Oracle Cloud Always Free VM-re van előkészítve.
 
----
+Részletes leírás:
 
-# 5. A rendszer logikája röviden
+- [deploy/oracle/README.md](/abs/path/c:/PROJEKTEK/triatlon/deploy/oracle/README.md)
+- [deploy/oracle/install.sh](/abs/path/c:/PROJEKTEK/triatlon/deploy/oracle/install.sh)
+- [deploy/oracle/triatlon.service](/abs/path/c:/PROJEKTEK/triatlon/deploy/oracle/triatlon.service)
+- [deploy/oracle/nginx-triatlon.conf](/abs/path/c:/PROJEKTEK/triatlon/deploy/oracle/nginx-triatlon.conf)
 
-## Csapatképzés
-- 1–10. ember:
-  - sorban megy az 5 csapatba
-  - így lesz 5 db 2 fős csapat
+## Fontos megjegyzés
 
-- 11–15. ember:
-  - a 3. fős bővítési körbe kerül
-  - ha összejön 5 ember, azonnal random kiosztás az 5 csapatba
-  - ha nem, a határidő végén random kiosztás a bent maradtaknak
-
-- 16–20. ember:
-  - ugyanez a 4. fős bővítési körben
-
-## Lezárás
-- a rendszer az esemény előtt 6 órával lezár
-- a határidő után új jelentkezést nem fogad
-- ha van bent maradt bővítési pool, azt az oldal automatikusan véglegesíti
-
----
-
-# 6. Fontos őszinte megjegyzés
-
-Ez a verzió szándékosan **egyszerű**, hogy:
-- gyorsan kint legyen
-- könnyű legyen beélesíteni
-- ne legyen agyonbonyolítva
-
-Amit **nem** tud:
-- kifinomult jogosultsági rendszer
-- email visszaigazolás
-- teljes audit log
-- több szervezős kezelés
-- komplex admin workflow
-
-Viszont a lényegi célodra pontosan jó:
-- esemény létrehozás
-- jelentkezés
-- automatikus csapatképzés
-- nyomtatható pontozólap
-- egyszerű élesítés
-
----
-
-# 7. Ha valami nem működik
-
-## Gyakori okok
-- rossz `SECRET_KEY`
-- nincs telepítve a requirements
-- hibás Google callback URL
-- Renderen nincs beállítva a `DATABASE_URL`
-
-## Első ellenőrzési pontok
-1. Fut-e helyben?
-2. Meg tudsz-e nyitni egy eseményt?
-3. Tudsz-e név+email alapján jelentkezni?
-4. Működik-e a szervezői belépés?
-5. Látod-e a nyomtatható pontlapot?
-
-Ha ez az 5 megy, az app életben van.
+Az alkalmazás jelenleg SQLite-ot használ. Kis-közepes forgalmú, egyszerű eseménykezeléshez ez még teljesen jó lehet, de érdemes rendszeresen menteni az adatbázist.

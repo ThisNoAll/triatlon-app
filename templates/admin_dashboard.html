@@ -1,485 +1,69 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Szervezői dashboard</title>
   <style>
-    :root {
-      --bg: #f8fafc;
-      --card: #ffffff;
-      --text: #0f172a;
-      --muted: #64748b;
-      --line: #e2e8f0;
-      --primary: #0f172a;
-      --ok-bg: #dcfce7;
-      --ok-text: #166534;
-      --warn-bg: #fef3c7;
-      --warn-text: #92400e;
-      --err-bg: #fee2e2;
-      --err-text: #991b1b;
-      --info-bg: #e0f2fe;
-      --info-text: #075985;
-      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-      --radius: 20px;
-    }
-
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      font-family: Arial, Helvetica, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-    }
-
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 24px;
-    }
-
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-      margin-bottom: 24px;
-      flex-wrap: wrap;
-    }
-
-    .title-wrap h1 {
-      margin: 0 0 8px;
-      font-size: 36px;
-      line-height: 1.08;
-    }
-
-    .title-wrap p {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.5;
-    }
-
-    .actions {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .btn, button {
-      display: inline-block;
-      border: 0;
-      border-radius: 14px;
-      padding: 12px 16px;
-      font-size: 15px;
-      font-weight: 700;
-      cursor: pointer;
-      text-decoration: none;
-      transition: 0.15s ease;
-    }
-
-    .btn-primary, button {
-      background: var(--primary);
-      color: #fff;
-    }
-
-    .btn-secondary {
-      background: #fff;
-      color: var(--text);
-      border: 1px solid var(--line);
-    }
-
-    .btn-danger {
-      background: #7f1d1d;
-      color: #fff;
-    }
-
-    .btn:hover, button:hover {
-      transform: translateY(-1px);
-      opacity: 0.97;
-    }
-
-    .card {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 22px;
-      box-shadow: var(--shadow);
-    }
-
-    .grid-main {
-      display: grid;
-      grid-template-columns: 1.3fr 0.7fr;
-      gap: 24px;
-      margin-top: 20px;
-    }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
-      margin-top: 16px;
-    }
-
-    .stat {
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 14px;
-      background: #fff;
-    }
-
-    .stat .k {
-      font-size: 12px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      margin-bottom: 4px;
-    }
-
-    .stat .v {
-      font-size: 24px;
-      font-weight: 800;
-    }
-
-    .flash {
-      border-radius: 14px;
-      padding: 12px 14px;
-      margin-bottom: 12px;
-      font-weight: 700;
-    }
-
-    .flash.success { background: var(--ok-bg); color: var(--ok-text); }
-    .flash.error { background: var(--err-bg); color: var(--err-text); }
-    .flash.info { background: var(--info-bg); color: var(--info-text); }
-
-    .notice {
-      border-radius: 16px;
-      padding: 14px 16px;
-      margin-bottom: 12px;
-      font-size: 14px;
-      line-height: 1.45;
-    }
-
-    .notice.ok { background: var(--ok-bg); color: var(--ok-text); }
-    .notice.warn { background: var(--warn-bg); color: var(--warn-text); }
-    .notice.info { background: var(--info-bg); color: var(--info-text); }
-
-    h2 {
-      margin: 0 0 14px;
-      font-size: 26px;
-    }
-
-    h3 {
-      margin: 0 0 10px;
-      font-size: 18px;
-    }
-
-    .small {
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    .events-list {
-      display: grid;
-      gap: 12px;
-      margin-top: 14px;
-    }
-
-    .event-item {
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 14px;
-      background: #fff;
-    }
-
-    .event-item-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: start;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-
-    .event-meta {
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    .teams-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 14px;
-      margin-top: 16px;
-    }
-
-    .team-card {
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 14px;
-      background: #fff;
-    }
-
-    .team-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: start;
-      gap: 12px;
-      margin-bottom: 10px;
-    }
-
-    .pill {
-      display: inline-block;
-      padding: 6px 10px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 700;
-      background: #f1f5f9;
-      color: #334155;
-      white-space: nowrap;
-    }
-
-    .pill.ok {
-      background: var(--ok-bg);
-      color: var(--ok-text);
-    }
-
-    .member {
-      border-radius: 12px;
-      padding: 9px 11px;
-      background: #f8fafc;
-      border: 1px solid #edf2f7;
-      margin-bottom: 8px;
-      font-size: 14px;
-    }
-
-    .muted-box {
-      border: 1px dashed #cbd5e1;
-      border-radius: 14px;
-      padding: 12px;
-      color: var(--muted);
-      background: #f8fafc;
-    }
-
-    .stack > * + * {
-      margin-top: 14px;
-    }
-
-    form.inline {
-      display: inline;
-      margin: 0;
-    }
-
-    @media (max-width: 980px) {
-      .grid-main,
-      .stats-grid,
-      .teams-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .title-wrap h1 {
-        font-size: 30px;
-      }
-    }
+    :root { --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --muted:#64748b; --line:#e2e8f0; --primary:#0f172a; --ok-bg:#dcfce7; --ok-text:#166534; --warn-bg:#fef3c7; --warn-text:#92400e; --shadow:0 10px 30px rgba(15,23,42,.08); --radius:20px; }
+    * { box-sizing:border-box; } body { margin:0; font-family:Arial, Helvetica, sans-serif; background:var(--bg); color:var(--text); }
+    .container { max-width:1200px; margin:0 auto; padding:24px; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:24px; flex-wrap:wrap; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; }
+    .btn { display:inline-block; border:0; border-radius:14px; padding:12px 16px; font-size:15px; font-weight:700; text-decoration:none; }
+    .btn-primary { background:var(--primary); color:#fff; } .btn-secondary { background:#fff; color:var(--text); border:1px solid var(--line); } .btn-danger { background:#7f1d1d; color:#fff; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:22px; box-shadow:var(--shadow); }
+    .event-card { border:1px solid var(--line); border-radius:16px; padding:18px; background:#fff; margin-top:16px; }
+    .event-top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+    .flash { border-radius:14px; padding:12px 14px; margin-bottom:12px; font-weight:700; }
+    .flash.success{background:var(--ok-bg);color:var(--ok-text);} .flash.error{background:#fee2e2;color:#991b1b;} .flash.info{background:#e0f2fe;color:#075985;}
+    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:16px; }
+    .stat { background:#f8fafc; border:1px solid var(--line); border-radius:14px; padding:12px; }
+    .stat .k { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; }
+    .stat .v { font-size:18px; font-weight:800; }
+    .pill { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; background:#f1f5f9; color:#334155; }
+    .pill.ok { background:var(--ok-bg); color:var(--ok-text); } .pill.warn { background:var(--warn-bg); color:var(--warn-text); }
+    .meta { color:var(--muted); font-size:14px; line-height:1.5; margin-top:8px; }
+    @media (max-width:980px){ .stats{grid-template-columns:1fr;} }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="topbar">
-      <div class="title-wrap">
-        <h1>Szervezői dashboard</h1>
-        <p>Itt tudod kezelni az eseményt, ellenőrizni a jelentkezéseket és véglegesíteni a mezőnyt.</p>
-      </div>
-
-      <div class="actions">
-        <a href="{{ url_for('admin_new_event') }}" class="btn btn-primary">Új esemény</a>
-        <a href="{{ url_for('home') }}" class="btn btn-secondary">Publikus oldal</a>
-        <a href="{{ url_for('admin_logout') }}" class="btn btn-secondary">Kilépés</a>
-      </div>
+      <div><h1 style="margin:0 0 8px;">Szervezői dashboard</h1><div class="meta">Az összes eseményt itt látod, és külön eseményoldalra léphetsz be a kezelésükhöz.</div></div>
+      <div class="actions"><a href="{{ url_for('admin_new_event') }}" class="btn btn-primary">Új esemény</a><a href="{{ url_for('home') }}" class="btn btn-secondary">Publikus lista</a><a href="{{ url_for('admin_logout') }}" class="btn btn-secondary">Kilépés</a></div>
     </div>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="flash {{ category }}">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-
-    {% if latest_event %}
-      <div class="grid-main">
-        <div class="card">
-          <h2>Aktív esemény</h2>
-
-          <div class="notice info">
-            A jelentkezési határidő automatikusan az esemény előtt 6 órával zár. Minimum indulás: <strong>6 fő / 3 csapat</strong>.
-          </div>
-
-          <div class="event-item">
-            <div class="event-item-top">
-              <div>
-                <h3>{{ latest_event["title"] }}</h3>
-                <div class="event-meta">
-                  Esemény ideje: <strong>{{ format_dt_display(latest_event["event_at"]) }}</strong><br>
-                  Jelentkezési határidő: <strong>{{ format_dt_display(latest_event["registration_deadline"]) }}</strong><br>
-                  Állapot:
-                  {% if latest_event["is_closed"] == 1 %}
-                    <strong>Lezárt</strong>
-                  {% else %}
-                    <strong>Nyitott</strong>
-                  {% endif %}
-                </div>
+    {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endif %}{% endwith %}
+    {% if event_cards %}
+      {% for card in event_cards %}
+        {% set event = card.event %}
+        {% set stats = card.stats %}
+        <div class="card event-card">
+          <div class="event-top">
+            <div>
+              <div style="margin-bottom:8px;">{% if event["is_closed"] == 1 %}<span class="pill warn">Lezárt</span>{% else %}<span class="pill ok">Nyitott</span>{% endif %}</div>
+              <h2 style="margin:0;">{{ event["title"] }}</h2>
+              <div class="meta">
+                Publikus oldal: <strong>/e/{{ event["slug"] }}</strong><br>
+                Esemény ideje: <strong>{{ format_dt_display(event["event_at"]) }}</strong><br>
+                Határidő: <strong>{{ format_dt_display(event["registration_deadline"]) }}</strong>
               </div>
-
-              <div class="actions">
-                <a href="{{ url_for('admin_score_sheet', event_id=latest_event['id']) }}" class="btn btn-secondary">Pontozólap</a>
-
-                {% if latest_event["is_closed"] == 0 %}
-                  <form method="post" action="{{ url_for('admin_finalize_event', event_id=latest_event['id']) }}" class="inline">
-                    <button type="submit" class="btn-danger">Jelentkezés lezárása</button>
-                  </form>
-                {% endif %}
-              </div>
+            </div>
+            <div class="actions">
+              <a href="{{ url_for('admin_event_dashboard', event_id=event['id']) }}" class="btn btn-primary">Kezelés</a>
+              <a href="{{ url_for('event_home', slug=event['slug']) }}" class="btn btn-secondary">Publikus oldal</a>
+              <a href="{{ url_for('admin_delete_event', event_id=event['id']) }}" class="btn btn-danger">Törlés</a>
             </div>
           </div>
-
-          {% if event_stats %}
-            <div class="stats-grid">
-              <div class="stat">
-                <div class="k">Összes jelentkező</div>
-                <div class="v">{{ event_stats.total_registrations }}</div>
-              </div>
-              <div class="stat">
-                <div class="k">3. körös pool</div>
-                <div class="v">{{ event_stats.stage3_pending_count }}/5</div>
-              </div>
-              <div class="stat">
-                <div class="k">4. körös pool</div>
-                <div class="v">{{ event_stats.stage4_pending_count }}/5</div>
-              </div>
-            </div>
-
-            {% if event_stats.can_start %}
-              <div class="notice ok" style="margin-top: 16px;">
-                A minimum indulási feltétel teljesült. A játék el tud indulni.
-              </div>
-            {% else %}
-              <div class="notice warn" style="margin-top: 16px;">
-                A minimum indulási feltétel még nem teljesült. Legalább 6 fő szükséges.
-              </div>
-            {% endif %}
-
-            <div class="teams-grid">
-              {% for team in event_stats.teams %}
-                <div class="team-card">
-                  <div class="team-top">
-                    <div>
-                      <h3 style="margin-bottom: 4px;">
-                        {% if team.team_name %}
-                          {{ team.team_name }}
-                        {% else %}
-                          Csapat {{ team.team_number }}
-                        {% endif %}
-                      </h3>
-                      <div class="small">{{ team.count }}/{{ team.capacity }} fő</div>
-                    </div>
-
-                    {% if team.count >= 2 and team.count == team.capacity %}
-                      <span class="pill ok">Teljes szint</span>
-                    {% else %}
-                      <span class="pill">Folyamatban</span>
-                    {% endif %}
-                  </div>
-
-                  {% if team.count == 0 %}
-                    <div class="muted-box">Még nincs jelentkező.</div>
-
-                  {% elif team.count == 1 %}
-                    <div class="member">{{ team.visible_names[0] if team.visible_names else '1 fő bent van' }}</div>
-                    <div class="muted-box">Várakozás a 2. főre.</div>
-
-                  {% elif team.count == 2 %}
-                    {% for name in team.visible_names %}
-                      <div class="member">{{ name }}</div>
-                    {% endfor %}
-                    {% if team.capacity == 3 %}
-                      <div class="muted-box">A 3. hely még feltöltés alatt van.</div>
-                    {% endif %}
-
-                  {% elif team.count == 3 %}
-                    {% for name in team.visible_names %}
-                      <div class="member">{{ name }}</div>
-                    {% endfor %}
-                    {% if team.capacity == 4 %}
-                      <div class="muted-box">A 4. hely még feltöltés alatt van.</div>
-                    {% endif %}
-
-                  {% elif team.count == 4 %}
-                    {% for name in team.visible_names %}
-                      <div class="member">{{ name }}</div>
-                    {% endfor %}
-                  {% endif %}
-                </div>
-              {% endfor %}
-            </div>
-          {% endif %}
-        </div>
-
-        <div class="stack">
-          <div class="card">
-            <h2>Események</h2>
-            {% if events %}
-              <div class="events-list">
-                {% for event in events %}
-                  <div class="event-item">
-                    <strong>{{ event["title"] }}</strong>
-                    <div class="event-meta">
-                      Esemény: {{ format_dt_display(event["event_at"]) }}<br>
-                      Határidő: {{ format_dt_display(event["registration_deadline"]) }}<br>
-                      Állapot:
-                      {% if event["is_closed"] == 1 %}
-                        Lezárt
-                      {% else %}
-                        Nyitott
-                      {% endif %}
-                    </div>
-                  </div>
-                {% endfor %}
-              </div>
-            {% else %}
-              <div class="muted-box">Még nincs létrehozott esemény.</div>
-            {% endif %}
-          </div>
-
-          <div class="card">
-            <h2>Rövid emlékeztető</h2>
-            <div class="stack">
-              <div class="muted-box">
-                Minimum indulás: <strong>3 csapat / 6 fő</strong>
-              </div>
-              <div class="muted-box">
-                Maximum: <strong>5 csapat / 20 fő</strong>
-              </div>
-              <div class="muted-box">
-                Az első 10 főből alakul ki az 5 db 2 fős alapcsapat.
-              </div>
-              <div class="muted-box">
-                A további jelentkezők random módon bővítik a csapatokat 3, majd 4 főre.
-              </div>
-              <div class="muted-box">
-                A hiányos bővítési körök a határidő lejártakor automatikusan szétosztásra kerülnek.
-              </div>
-            </div>
+          <div class="stats">
+            <div class="stat"><div class="k">Összes jelentkező</div><div class="v">{{ stats.total_registrations }}</div></div>
+            <div class="stat"><div class="k">Aktív mezőny</div><div class="v">{{ stats.active_registrations }}</div></div>
+            <div class="stat"><div class="k">3. körös pool</div><div class="v">{{ stats.stage3_pending_count }}/5</div></div>
+            <div class="stat"><div class="k">4. körös pool</div><div class="v">{{ stats.stage4_pending_count }}/5</div></div>
           </div>
         </div>
-      </div>
+      {% endfor %}
     {% else %}
-      <div class="card">
-        <h2>Még nincs esemény</h2>
-        <p>Először hozz létre egy eseményt. Utána jelenik meg a publikus jelentkezési oldal és a csapatlogika.</p>
-        <a href="{{ url_for('admin_new_event') }}" class="btn btn-primary">Első esemény létrehozása</a>
-      </div>
+      <div class="card"><h2>Még nincs esemény</h2><p>Először hozz létre egy eseményt.</p></div>
     {% endif %}
   </div>
 </body>

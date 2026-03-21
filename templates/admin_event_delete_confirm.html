@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Esemény törlése</title>
+  <style>
+    :root { --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --muted:#64748b; --line:#e2e8f0; --danger:#7f1d1d; --danger-soft:#fee2e2; --danger-text:#991b1b; --shadow:0 10px 30px rgba(15,23,42,.08); --radius:20px; }
+    * { box-sizing:border-box; } body { margin:0; font-family:Arial, Helvetica, sans-serif; background:var(--bg); color:var(--text); }
+    .container { max-width:820px; margin:0 auto; padding:24px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:24px; box-shadow:var(--shadow); }
+    .warn { background:var(--danger-soft); color:var(--danger-text); border-radius:16px; padding:16px; line-height:1.55; margin:18px 0; }
+    .meta { color:var(--muted); line-height:1.6; margin-top:8px; }
+    .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:20px; }
+    .stat { background:#f8fafc; border:1px solid var(--line); border-radius:14px; padding:12px; }
+    .stat .k { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; }
+    .stat .v { font-size:18px; font-weight:800; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:24px; }
+    .btn { display:inline-block; border:0; border-radius:14px; padding:12px 16px; font-size:15px; font-weight:700; text-decoration:none; cursor:pointer; }
+    .btn-secondary { background:#fff; color:var(--text); border:1px solid var(--line); }
+    .btn-danger { background:var(--danger); color:#fff; }
+    @media (max-width:760px){ .stats{grid-template-columns:1fr;} }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1 style="margin:0 0 8px;">Esemény törlése</h1>
+      <div class="meta">
+        Ezt a műveletet már nem lehet visszavonni.<br>
+        Esemény: <strong>{{ event["title"] }}</strong><br>
+        Időpont: <strong>{{ format_dt_display(event["event_at"]) }}</strong>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="k">Összes jelentkező</div><div class="v">{{ event_stats.total_registrations }}</div></div>
+        <div class="stat"><div class="k">Aktív mezőny</div><div class="v">{{ event_stats.active_registrations }}</div></div>
+        <div class="stat"><div class="k">Slug</div><div class="v" style="font-size:15px;">{{ event["slug"] }}</div></div>
+      </div>
+
+      <div class="warn">
+        Az esemény törlésével az összes hozzá tartozó jelentkezés, csapatnév-javaslat és szavazat is törlődni fog.
+        Csak akkor erősítsd meg, ha biztosan nincs már szükség erre az eseményre.
+      </div>
+
+      <div class="actions">
+        <a href="{{ url_for('admin_event_dashboard', event_id=event['id']) }}" class="btn btn-secondary">Mégse</a>
+        <form method="post" action="{{ url_for('admin_delete_event', event_id=event['id']) }}" style="margin:0;">
+          <button type="submit" class="btn btn-danger">Esemény végleges törlése</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
