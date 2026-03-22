@@ -11,8 +11,33 @@
     .btn,button{display:inline-block;border:0;border-radius:14px;padding:12px 16px;font-size:15px;font-weight:700;cursor:pointer;text-decoration:none;transition:.15s ease;} .btn-primary,button{background:var(--primary);color:#fff;} .btn-secondary{background:#fff;color:var(--text);border:1px solid var(--line);} .actions{display:flex;gap:10px;flex-wrap:wrap;}
     .field{margin-bottom:16px;} .field label{display:block;margin-bottom:6px;font-weight:700;font-size:14px;} .field input,.field textarea{width:100%;border:1px solid #cbd5e1;border-radius:14px;padding:12px 14px;font-size:15px;outline:none;}
     .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;} .notice{border-radius:16px;padding:14px 16px;margin-bottom:16px;font-size:14px;line-height:1.45;background:var(--info-bg);color:var(--info-text);} .checkbox-row{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
+    .editor-wrap{border:1px solid #cbd5e1;border-radius:18px;overflow:hidden;background:#fff;}
+    .editor-toolbar{display:flex;gap:8px;flex-wrap:wrap;padding:10px;border-bottom:1px solid var(--line);background:#f8fafc;}
+    .editor-toolbar button{padding:8px 12px;font-size:13px;border-radius:10px;background:#fff;color:var(--text);border:1px solid var(--line);}
+    .editor{min-height:180px;padding:14px;outline:none;line-height:1.6;}
+    .editor:empty:before{content:attr(data-placeholder);color:#94a3b8;}
+    .editor p{margin:0 0 12px;color:var(--text);} .editor ul,.editor ol{margin:0 0 12px 20px;} .editor blockquote{margin:0 0 12px;padding-left:12px;border-left:3px solid #bfdbfe;color:#475569;}
   </style>
-  <script>function toggleFeeFields(){const hasFee=document.getElementById('has_fee').checked;document.getElementById('fee_fields').style.display=hasFee?'block':'none';}window.addEventListener('DOMContentLoaded',toggleFeeFields);</script>
+  <script>
+    function toggleFeeFields(){const hasFee=document.getElementById('has_fee').checked;document.getElementById('fee_fields').style.display=hasFee?'block':'none';}
+    function editorCommand(command, value=null){
+      const editor=document.getElementById('description_editor');
+      editor.focus();
+      if(command==='createLink'){
+        const url=window.prompt('Add meg a linket (https://...)');
+        if(url){document.execCommand(command,false,url);}
+        return;
+      }
+      document.execCommand(command,false,value);
+    }
+    window.addEventListener('DOMContentLoaded',()=>{
+      toggleFeeFields();
+      const form=document.getElementById('event_form');
+      const editor=document.getElementById('description_editor');
+      const hidden=document.getElementById('description');
+      form.addEventListener('submit',()=>{hidden.value=editor.innerHTML;});
+    });
+  </script>
 </head>
 <body>
 <div class="container">
@@ -34,9 +59,24 @@
   <div class="card">
     <span class="badge">Szervezői űrlap</span>
     <div class="notice">A jelentkezési határidőt a rendszer automatikusan az esemény időpontja előtti <strong>6 órára</strong> állítja be.</div>
-    <form method="post">
+    <form method="post" id="event_form">
       <div class="field"><label>Esemény neve</label><input name="title" type="text" value="{% if event %}{{ event['title'] }}{% endif %}"></div>
-      <div class="field"><label>Esemény leírása</label><textarea name="description" rows="4">{% if event and event['description'] %}{{ event['description'] }}{% endif %}</textarea></div>
+      <div class="field">
+        <label>Esemény leírása</label>
+        <div class="editor-wrap">
+          <div class="editor-toolbar">
+            <button type="button" onclick="editorCommand('bold')"><strong>Félkövér</strong></button>
+            <button type="button" onclick="editorCommand('italic')"><em>Dőlt</em></button>
+            <button type="button" onclick="editorCommand('insertUnorderedList')">Lista</button>
+            <button type="button" onclick="editorCommand('insertOrderedList')">Számozás</button>
+            <button type="button" onclick="editorCommand('formatBlock','<p>')">Bekezdés</button>
+            <button type="button" onclick="editorCommand('formatBlock','<blockquote>')">Idézet</button>
+            <button type="button" onclick="editorCommand('createLink')">Link</button>
+          </div>
+          <div id="description_editor" class="editor" contenteditable="true" data-placeholder="Írd ide az esemény leírását...">{% if event and event['description_html'] %}{{ event['description_html'] }}{% endif %}</div>
+        </div>
+        <textarea id="description" name="description" rows="4" hidden>{% if event and event['description'] %}{{ event['description'] }}{% endif %}</textarea>
+      </div>
       <div class="grid-2">
         <div class="field"><label>Esemény dátuma</label><input name="event_date" type="date" value="{% if event %}{{ event['event_at'][:10] }}{% endif %}" required></div>
         <div class="field"><label>Esemény kezdési ideje</label><input name="event_time" type="time" value="{% if event %}{{ event['event_at'][11:16] }}{% endif %}" required></div>

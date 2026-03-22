@@ -209,6 +209,24 @@ class TriatlonAppTests(unittest.TestCase):
         self.assertIn("Sikeres jelentkezés.", html)
         self.assertNotIn("Válassz eseményt", html)
 
+    def test_registration_can_seed_initial_team_name_idea(self):
+        self.create_event("Otletes Kupa", "otletes-kupa")
+
+        response = self.client.post(
+            "/e/otletes-kupa/register",
+            data={
+                "name": "Teszt Elek",
+                "email": "teszt@example.com",
+                "team_name_idea": "Villamkiflik",
+            },
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("Villamkiflik", html)
+        self.assertIn("1/2", html)
+
     def test_paid_event_requires_payment_method_and_saves_it(self):
         event_id = self.create_event(
             "Fizetős Kupa",

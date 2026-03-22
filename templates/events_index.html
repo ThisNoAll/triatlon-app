@@ -24,6 +24,9 @@
     h1 { margin:0 0 12px; font-size:42px; line-height:1.05; }
     h2 { margin:0; font-size:22px; }
     p { margin:0; color:var(--muted); line-height:1.55; }
+    .rich-text p { margin:0 0 12px; color:var(--muted); line-height:1.55; }
+    .rich-text ul, .rich-text ol { margin:0 0 12px 20px; color:var(--muted); line-height:1.55; }
+    .rich-text blockquote { margin:0 0 12px; padding-left:12px; border-left:3px solid #bfdbfe; color:var(--muted); }
     .stats { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-top:18px; }
     .stat { background:#f8fafc; border:1px solid var(--line); border-radius:14px; padding:14px; }
     .stat .k { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; }
@@ -57,7 +60,7 @@
               <div style="margin-bottom:10px;">{% if event["is_closed"] == 1 %}<span class="pill warn">Lezárt</span>{% else %}<span class="pill ok">Nyitott</span>{% endif %}</div>
               <h2>{{ event["title"] }}</h2>
             </div>
-            {% if event["description"] %}<p>{{ event["description"] }}</p>{% endif %}
+            {% if event["description_html"] %}<div class="rich-text">{{ event["description_html"] }}</div>{% endif %}
             <div class="meta">
               Esemény ideje: <strong>{{ format_dt_display(event["event_at"]) }}</strong><br>
               Jelentkezési határidő: <strong>{{ format_dt_display(event["registration_deadline"]) }}</strong><br>
