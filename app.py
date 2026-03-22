@@ -3,7 +3,9 @@ import re
 import sqlite3
 import random
 import unicodedata
+from types import SimpleNamespace
 from functools import wraps
+from html.parser import HTMLParser
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from flask import (
@@ -17,6 +19,7 @@ from flask import (
     session,
     g,
 )
+from markupsafe import Markup, escape
 
 # --------------------------------------------------
 # Optional Google login via Authlib
@@ -52,11 +55,13 @@ def resolve_database_path():
 
 
 DB_PATH = resolve_database_path()
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-change-me")
 
 app.config["DATABASE"] = DB_PATH
+app.config["DATABASE_URL"] = DATABASE_URL
 app.config["EVENT_TITLE_DEFAULT"] = "Kupa"
 app.config["ADMIN_PASSWORD"] = os.getenv("ADMIN_PASSWORD", "admin123")
 app.config["GOOGLE_CLIENT_ID"] = os.getenv("GOOGLE_CLIENT_ID", "")
@@ -94,10 +99,41 @@ if AUTHLIB_AVAILABLE and app.config["GOOGLE_CLIENT_ID"] and app.config["GOOGLE_C
 # --------------------------------------------------
 # DB helpers
 # --------------------------------------------------
+def get_database_engine():
+    database_url = (app.config.get("DATABASE_URL") or "").strip()
+    if database_url.startswith("postgres://") or database_url.startswith("postgresql://"):
+        return "postgres"
+    return "sqlite"
+
+
+def translate_sql(sql):
+    if get_database_engine() == "postgres":
+        return sql.replace("?", "%s")
+    return sql
+
+
+def connect_postgres():
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+    except Exception as exc:
+        raise RuntimeError(
+            "A Postgres kapcsolat használatához telepítsd a psycopg csomagot."
+        ) from exc
+
+    return psycopg.connect(
+        app.config["DATABASE_URL"],
+        row_factory=dict_row,
+    )
+
+
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(app.config["DATABASE"])
-        g.db.row_factory = sqlite3.Row
+        if get_database_engine() == "postgres":
+            g.db = connect_postgres()
+        else:
+            g.db = sqlite3.connect(app.config["DATABASE"])
+            g.db.row_factory = sqlite3.Row
     return g.db
 
 
@@ -109,15 +145,46 @@ def close_db(error=None):
 
 
 def query_all(sql, params=()):
-    return get_db().execute(sql, params).fetchall()
+    db = get_db()
+    sql = translate_sql(sql)
+    if get_database_engine() == "postgres":
+        with db.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.fetchall()
+    return db.execute(sql, params).fetchall()
 
 
 def query_one(sql, params=()):
-    return get_db().execute(sql, params).fetchone()
+    db = get_db()
+    sql = translate_sql(sql)
+    if get_database_engine() == "postgres":
+        with db.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.fetchone()
+    return db.execute(sql, params).fetchone()
 
 
 def execute(sql, params=()):
     db = get_db()
+    sql = translate_sql(sql)
+    if get_database_engine() == "postgres":
+        lastrowid = None
+        with db.cursor() as cur:
+            statement = sql.strip()
+            lowered = statement.lower()
+            if lowered.startswith("insert into") and " returning " not in lowered:
+                cur.execute(f"{statement} RETURNING id", params)
+                row = cur.fetchone()
+                if row:
+                    if isinstance(row, dict):
+                        lastrowid = row.get("id")
+                    else:
+                        lastrowid = row[0]
+            else:
+                cur.execute(statement, params)
+        db.commit()
+        return SimpleNamespace(lastrowid=lastrowid)
+
     cur = db.execute(sql, params)
     db.commit()
     return cur
@@ -126,89 +193,172 @@ def execute(sql, params=()):
 def init_db():
     db = get_db()
 
-    db.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            slug TEXT UNIQUE,
-            description TEXT,
-            event_at TEXT NOT NULL,
-            registration_deadline TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            is_closed INTEGER NOT NULL DEFAULT 0,
-            finalized_at TEXT,
+    if get_database_engine() == "postgres":
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS events (
+                    id SERIAL PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    slug TEXT,
+                    description TEXT,
+                    event_at TEXT NOT NULL,
+                    registration_deadline TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    is_closed INTEGER NOT NULL DEFAULT 0,
+                    finalized_at TEXT,
+                    has_fee INTEGER NOT NULL DEFAULT 0,
+                    fee_amount INTEGER DEFAULT 0,
+                    beneficiary_name TEXT,
+                    bank_account TEXT
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS registrations (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    participant_name TEXT NOT NULL,
+                    participant_email TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    google_sub TEXT,
+                    created_at TEXT NOT NULL,
+                    assigned_team INTEGER,
+                    assigned_stage INTEGER,
+                    assigned_slot INTEGER,
+                    pending_stage INTEGER,
+                    pending_position INTEGER,
+                    payment_status TEXT NOT NULL DEFAULT 'paid',
+                    payment_method TEXT NOT NULL DEFAULT 'none',
+                    payment_note TEXT,
+                    is_manual INTEGER NOT NULL DEFAULT 0,
+                    removed_from_team INTEGER NOT NULL DEFAULT 0,
+                    is_deleted INTEGER NOT NULL DEFAULT 0,
+                    pending_team_name_idea TEXT
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS team_name_proposals (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    team_number INTEGER NOT NULL,
+                    proposed_name TEXT NOT NULL,
+                    proposed_by_registration_id INTEGER NOT NULL REFERENCES registrations(id),
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT NOT NULL,
+                    finalized_at TEXT,
+                    is_admin_override INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS team_name_votes (
+                    id SERIAL PRIMARY KEY,
+                    proposal_id INTEGER NOT NULL REFERENCES team_name_proposals(id),
+                    registration_id INTEGER NOT NULL REFERENCES registrations(id),
+                    vote TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(proposal_id, registration_id)
+                )
+                """
+            )
+        db.commit()
+    else:
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                slug TEXT UNIQUE,
+                description TEXT,
+                event_at TEXT NOT NULL,
+                registration_deadline TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                is_closed INTEGER NOT NULL DEFAULT 0,
+                finalized_at TEXT,
 
-            has_fee INTEGER NOT NULL DEFAULT 0,
-            fee_amount INTEGER DEFAULT 0,
-            beneficiary_name TEXT,
-            bank_account TEXT
-        );
+                has_fee INTEGER NOT NULL DEFAULT 0,
+                fee_amount INTEGER DEFAULT 0,
+                beneficiary_name TEXT,
+                bank_account TEXT
+            );
 
-        CREATE TABLE IF NOT EXISTS registrations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            event_id INTEGER NOT NULL,
-            participant_name TEXT NOT NULL,
-            participant_email TEXT NOT NULL,
-            provider TEXT NOT NULL,
-            google_sub TEXT,
-            created_at TEXT NOT NULL,
+            CREATE TABLE IF NOT EXISTS registrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                participant_name TEXT NOT NULL,
+                participant_email TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                google_sub TEXT,
+                created_at TEXT NOT NULL,
 
-            assigned_team INTEGER,
-            assigned_stage INTEGER,
-            assigned_slot INTEGER,
+                assigned_team INTEGER,
+                assigned_stage INTEGER,
+                assigned_slot INTEGER,
 
-            pending_stage INTEGER,
-            pending_position INTEGER,
+                pending_stage INTEGER,
+                pending_position INTEGER,
 
-            payment_status TEXT NOT NULL DEFAULT 'paid',
-            payment_method TEXT NOT NULL DEFAULT 'none',
-            payment_note TEXT,
-            is_manual INTEGER NOT NULL DEFAULT 0,
-            removed_from_team INTEGER NOT NULL DEFAULT 0,
-            is_deleted INTEGER NOT NULL DEFAULT 0,
+                payment_status TEXT NOT NULL DEFAULT 'paid',
+                payment_method TEXT NOT NULL DEFAULT 'none',
+                payment_note TEXT,
+                is_manual INTEGER NOT NULL DEFAULT 0,
+                removed_from_team INTEGER NOT NULL DEFAULT 0,
+                is_deleted INTEGER NOT NULL DEFAULT 0,
 
-            FOREIGN KEY(event_id) REFERENCES events(id)
-        );
+                FOREIGN KEY(event_id) REFERENCES events(id)
+            );
 
-        CREATE TABLE IF NOT EXISTS team_name_proposals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            event_id INTEGER NOT NULL,
-            team_number INTEGER NOT NULL,
-            proposed_name TEXT NOT NULL,
-            proposed_by_registration_id INTEGER NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            created_at TEXT NOT NULL,
-            finalized_at TEXT,
-            is_admin_override INTEGER NOT NULL DEFAULT 0,
+            CREATE TABLE IF NOT EXISTS team_name_proposals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                team_number INTEGER NOT NULL,
+                proposed_name TEXT NOT NULL,
+                proposed_by_registration_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                finalized_at TEXT,
+                is_admin_override INTEGER NOT NULL DEFAULT 0,
 
-            FOREIGN KEY(event_id) REFERENCES events(id),
-            FOREIGN KEY(proposed_by_registration_id) REFERENCES registrations(id)
-        );
+                FOREIGN KEY(event_id) REFERENCES events(id),
+                FOREIGN KEY(proposed_by_registration_id) REFERENCES registrations(id)
+            );
 
-        CREATE TABLE IF NOT EXISTS team_name_votes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            proposal_id INTEGER NOT NULL,
-            registration_id INTEGER NOT NULL,
-            vote TEXT NOT NULL,
-            created_at TEXT NOT NULL,
+            CREATE TABLE IF NOT EXISTS team_name_votes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                proposal_id INTEGER NOT NULL,
+                registration_id INTEGER NOT NULL,
+                vote TEXT NOT NULL,
+                created_at TEXT NOT NULL,
 
-            UNIQUE(proposal_id, registration_id),
-            FOREIGN KEY(proposal_id) REFERENCES team_name_proposals(id),
-            FOREIGN KEY(registration_id) REFERENCES registrations(id)
-        );
-        """
-    )
+                UNIQUE(proposal_id, registration_id),
+                FOREIGN KEY(proposal_id) REFERENCES team_name_proposals(id),
+                FOREIGN KEY(registration_id) REFERENCES registrations(id)
+            );
+            """
+        )
     ensure_event_schema(db)
+    ensure_registration_schema(db)
     db.commit()
 
 
 def ensure_event_schema(db):
-    columns = {row["name"] for row in db.execute("PRAGMA table_info(events)").fetchall()}
-    if "slug" not in columns:
-        db.execute("ALTER TABLE events ADD COLUMN slug TEXT")
+    if get_database_engine() == "postgres":
+        with db.cursor() as cur:
+            cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS slug TEXT")
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_events_slug_unique ON events (slug)")
+        db.commit()
+        rows = query_all("SELECT id, title, event_at, slug FROM events ORDER BY id ASC")
+    else:
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(events)").fetchall()}
+        if "slug" not in columns:
+            db.execute("ALTER TABLE events ADD COLUMN slug TEXT")
+        rows = db.execute("SELECT id, title, event_at, slug FROM events ORDER BY id ASC").fetchall()
 
-    rows = db.execute("SELECT id, title, event_at, slug FROM events ORDER BY id ASC").fetchall()
     used_slugs = set()
     for row in rows:
         current_slug = (row["slug"] or "").strip()
@@ -223,6 +373,17 @@ def ensure_event_schema(db):
         )
         db.execute("UPDATE events SET slug = ? WHERE id = ?", (slug, row["id"]))
         used_slugs.add(slug)
+
+
+def ensure_registration_schema(db):
+    if get_database_engine() == "postgres":
+        with db.cursor() as cur:
+            cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS pending_team_name_idea TEXT")
+        db.commit()
+    else:
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(registrations)").fetchall()}
+        if "pending_team_name_idea" not in columns:
+            db.execute("ALTER TABLE registrations ADD COLUMN pending_team_name_idea TEXT")
 
 
 @app.before_request
@@ -260,6 +421,65 @@ def compute_payment_deadline(event_at):
 
 def normalize_team_name(name):
     return " ".join((name or "").strip().split())
+
+
+ALLOWED_DESCRIPTION_TAGS = {"p", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li", "a", "blockquote"}
+ALLOWED_DESCRIPTION_ATTRS = {"a": {"href", "target", "rel"}}
+
+
+class DescriptionSanitizer(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag not in ALLOWED_DESCRIPTION_TAGS:
+            return
+        cleaned = []
+        allowed = ALLOWED_DESCRIPTION_ATTRS.get(tag, set())
+        for key, value in attrs:
+            if key not in allowed or value is None:
+                continue
+            if key == "href":
+                href = value.strip()
+                if not (href.startswith("http://") or href.startswith("https://") or href.startswith("mailto:")):
+                    continue
+                value = href
+            cleaned.append(f'{key}="{escape(value)}"')
+        attr_text = f" {' '.join(cleaned)}" if cleaned else ""
+        self.parts.append(f"<{tag}{attr_text}>")
+
+    def handle_endtag(self, tag):
+        if tag in ALLOWED_DESCRIPTION_TAGS and tag != "br":
+            self.parts.append(f"</{tag}>")
+
+    def handle_data(self, data):
+        self.parts.append(str(escape(data)))
+
+    def get_html(self):
+        return "".join(self.parts)
+
+
+def sanitize_event_description_html(value):
+    parser = DescriptionSanitizer()
+    parser.feed(value or "")
+    parser.close()
+    return parser.get_html().strip()
+
+
+def format_event_description(value):
+    raw = (value or "").strip()
+    if not raw:
+        return Markup("")
+    if "<" in raw and ">" in raw:
+        return Markup(sanitize_event_description_html(raw))
+    paragraphs = [segment.strip() for segment in re.split(r"\r?\n\r?\n", raw) if segment.strip()]
+    if not paragraphs:
+        return Markup("")
+    html_parts = []
+    for paragraph in paragraphs:
+        html_parts.append(f"<p>{escape(paragraph).replace(chr(10), Markup('<br>')).replace(chr(13), '')}</p>")
+    return Markup("".join(str(part) for part in html_parts))
 
 
 def compact_bank_account(value):
@@ -604,6 +824,71 @@ def get_votes_for_proposal(proposal_id):
     )
 
 
+def create_or_replace_team_name_proposal(event_id, team_number, registration_id, proposed_name, is_admin_override=0):
+    proposed_name = normalize_team_name(proposed_name)
+    if not proposed_name:
+        raise ValueError("Adj meg egy csapatnevet.")
+
+    if team_name_exists(event_id, team_number, proposed_name):
+        raise ValueError("Ezen az eseményen már létezik ilyen csapatnév.")
+
+    old_pending = get_pending_team_name_proposal(event_id, team_number)
+    if old_pending:
+        execute(
+            "UPDATE team_name_proposals SET status = 'rejected', finalized_at = ? WHERE id = ?",
+            (now_str(), old_pending["id"]),
+        )
+
+    cur = execute(
+        """
+        INSERT INTO team_name_proposals (
+            event_id, team_number, proposed_name, proposed_by_registration_id, status, created_at, is_admin_override
+        )
+        VALUES (?, ?, ?, ?, 'pending', ?, ?)
+        """,
+        (event_id, team_number, proposed_name, registration_id, now_str(), is_admin_override),
+    )
+    proposal_id = cur.lastrowid
+
+    execute(
+        """
+        INSERT INTO team_name_votes (proposal_id, registration_id, vote, created_at)
+        VALUES (?, ?, 'approve', ?)
+        ON CONFLICT(proposal_id, registration_id)
+        DO UPDATE SET vote = excluded.vote, created_at = excluded.created_at
+        """,
+        (proposal_id, registration_id, now_str()),
+    )
+
+    evaluate_team_name_proposal(proposal_id)
+    return proposal_id
+
+
+def activate_stored_team_name_idea(registration_id):
+    reg = get_registration_by_id(registration_id)
+    if not reg or reg["assigned_team"] is None:
+        return
+
+    idea = normalize_team_name(reg["pending_team_name_idea"] or "")
+    if not idea:
+        return
+
+    existing = get_visible_team_name_proposal(reg["event_id"], reg["assigned_team"])
+    if existing:
+        execute("UPDATE registrations SET pending_team_name_idea = NULL WHERE id = ?", (registration_id,))
+        return
+
+    try:
+        create_or_replace_team_name_proposal(
+            reg["event_id"],
+            reg["assigned_team"],
+            registration_id,
+            idea,
+        )
+    finally:
+        execute("UPDATE registrations SET pending_team_name_idea = NULL WHERE id = ?", (registration_id,))
+
+
 def build_team_name_state(event_id, team_number):
     proposal = get_visible_team_name_proposal(event_id, team_number)
     if not proposal:
@@ -669,10 +954,7 @@ def get_my_status(event_id):
         status["team_name"] = team_name_state["name"] if team_name_state else approved_name
         status["team_name_state"] = team_name_state
         status["pending_proposal"] = pending_proposal
-        status["can_propose_team_name"] = (
-            team_size >= 2
-            and not event_has_started_or_closed(event_row)
-        )
+        status["can_propose_team_name"] = not event_has_started_or_closed(event_row)
         return status
 
     if reg["pending_stage"] == 3:
@@ -798,6 +1080,7 @@ def assign_pending_stage_full(event_id, stage):
             """,
             (team_number, stage, slot, reg["id"]),
         )
+        activate_stored_team_name_idea(reg["id"])
 
 
 def get_pending_pool(event_id, stage):
@@ -853,9 +1136,10 @@ def finalize_pending_stage_partial(event_id, stage):
             """,
             (team_number, stage, slot, reg["id"]),
         )
+        activate_stored_team_name_idea(reg["id"])
 
 
-def register_participant(event_id, name, email, provider, google_sub=None, payment_method=None):
+def register_participant(event_id, name, email, provider, google_sub=None, payment_method=None, team_name_idea=None):
     event_row = get_event(event_id)
     if not event_row:
         raise ValueError("Az esemény nem található.")
@@ -879,9 +1163,9 @@ def register_participant(event_id, name, email, provider, google_sub=None, payme
         """
         INSERT INTO registrations (
             event_id, participant_name, participant_email, provider, google_sub, created_at,
-            payment_status, payment_method, payment_note
+            payment_status, payment_method, payment_note, pending_team_name_idea
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             event_id,
@@ -893,6 +1177,7 @@ def register_participant(event_id, name, email, provider, google_sub=None, payme
             payment_status,
             payment_method,
             "",
+            normalize_team_name(team_name_idea or ""),
         ),
     )
     registration_id = cur.lastrowid
@@ -901,6 +1186,7 @@ def register_participant(event_id, name, email, provider, google_sub=None, payme
 
     if total_after_insert <= 10:
         assign_initial_if_needed(event_id, registration_id)
+        activate_stored_team_name_idea(registration_id)
     elif 11 <= total_after_insert <= 15:
         queue_for_stage(event_id, registration_id, 3)
         if total_after_insert == 15:
@@ -1017,6 +1303,14 @@ def build_event_stats(event_id):
     }
 
 
+def build_public_event_view(event_row):
+    if not event_row:
+        return None
+    data = dict(event_row)
+    data["description_html"] = format_event_description(event_row["description"])
+    return data
+
+
 # --------------------------------------------------
 # Team name logic
 # --------------------------------------------------
@@ -1111,9 +1405,11 @@ def home():
     for event_row in query_all("SELECT * FROM events WHERE is_closed = 0"):
         finalize_event_if_needed(event_row)
 
+    events = [build_public_event_view(event) for event in get_all_events()]
+
     return render_template(
         "events_index.html",
-        events=get_all_events(),
+        events=events,
         min_players=MIN_TEAMS_TO_START * BASE_TEAM_SIZE,
         max_players=MAX_PLAYERS,
         format_dt_display=format_dt_display,
@@ -1128,6 +1424,7 @@ def event_home(slug):
 
     finalize_event_if_needed(event_row)
     event_row = get_event(event_row["id"])
+    event_view = build_public_event_view(event_row)
 
     public_teams = build_public_teams(event_row["id"])
     my_status = get_my_status(event_row["id"])
@@ -1174,7 +1471,7 @@ def event_home(slug):
 
     return render_template(
         "home.html",
-        event=event_row,
+        event=event_view,
         public_teams=public_teams,
         my_status=my_status,
         total_registrations=total_registrations,
@@ -1206,6 +1503,7 @@ def register_email(slug):
     name = request.form.get("name", "").strip()
     email = request.form.get("email", "").strip()
     payment_method = request.form.get("payment_method", "").strip()
+    team_name_idea = request.form.get("team_name_idea", "").strip()
 
     if not name or not email:
         flash("A név és az email megadása kötelező.", "error")
@@ -1223,7 +1521,12 @@ def register_email(slug):
 
     try:
         registration_id = register_participant(
-            event_row["id"], name, email, provider="email", payment_method=payment_method
+            event_row["id"],
+            name,
+            email,
+            provider="email",
+            payment_method=payment_method,
+            team_name_idea=team_name_idea,
         )
         set_session_registration_id(event_row["id"], registration_id)
         flash("Sikeres jelentkezés.", "success")
@@ -1253,6 +1556,8 @@ def google_login(slug):
             flash("Google jelentkezéshez is válassz fizetési módot.", "error")
             return redirect(url_for("event_home", slug=slug))
         session[f"payment_method_{event_row['id']}"] = payment_method
+
+    session[f"team_name_idea_{event_row['id']}"] = request.args.get("team_name_idea", "").strip()
 
     redirect_uri = url_for("google_callback", slug=slug, _external=True)
     return oauth.google.authorize_redirect(redirect_uri)
@@ -1295,10 +1600,17 @@ def google_callback(slug):
         return redirect(url_for("event_home", slug=slug))
 
     payment_method = session.pop(f"payment_method_{event_row['id']}", None)
+    team_name_idea = session.pop(f"team_name_idea_{event_row['id']}", "")
 
     try:
         registration_id = register_participant(
-            event_row["id"], name, email, provider="google", google_sub=google_sub, payment_method=payment_method
+            event_row["id"],
+            name,
+            email,
+            provider="google",
+            google_sub=google_sub,
+            payment_method=payment_method,
+            team_name_idea=team_name_idea,
         )
         set_session_registration_id(event_row["id"], registration_id)
         flash("Sikeres Google-jelentkezés.", "success")
@@ -1336,47 +1648,12 @@ def propose_team_name(slug):
         return redirect(url_for("event_home", slug=slug))
 
     team_number = reg["assigned_team"]
-    team_members = get_team_members(event_row["id"], team_number)
-    if len(team_members) < 2:
-        flash("Csapatnév csak minimum 2 fős csapatnál adható meg.", "error")
-        return redirect(url_for("event_home", slug=slug))
-
     proposed_name = normalize_team_name(request.form.get("team_name", ""))
-    if not proposed_name:
-        flash("Adj meg egy csapatnevet.", "error")
+    try:
+        create_or_replace_team_name_proposal(event_row["id"], team_number, registration_id, proposed_name)
+    except ValueError as e:
+        flash(str(e), "error")
         return redirect(url_for("event_home", slug=slug))
-
-    if team_name_exists(event_row["id"], team_number, proposed_name):
-        flash("Ezen az eseményen már létezik ilyen csapatnév.", "error")
-        return redirect(url_for("event_home", slug=slug))
-
-    old_pending = get_pending_team_name_proposal(event_row["id"], team_number)
-    if old_pending:
-        execute(
-            "UPDATE team_name_proposals SET status = 'rejected', finalized_at = ? WHERE id = ?",
-            (now_str(), old_pending["id"]),
-        )
-
-    cur = execute(
-        """
-        INSERT INTO team_name_proposals (
-            event_id, team_number, proposed_name, proposed_by_registration_id, status, created_at, is_admin_override
-        )
-        VALUES (?, ?, ?, ?, 'pending', ?, 0)
-        """,
-        (event_row["id"], team_number, proposed_name, registration_id, now_str()),
-    )
-    proposal_id = cur.lastrowid
-
-    execute(
-        """
-        INSERT INTO team_name_votes (proposal_id, registration_id, vote, created_at)
-        VALUES (?, ?, 'approve', ?)
-        """,
-        (proposal_id, registration_id, now_str()),
-    )
-
-    evaluate_team_name_proposal(proposal_id)
     flash("A csapatnév-javaslat rögzítve lett.", "success")
     return redirect(url_for("event_home", slug=slug))
 
@@ -1494,7 +1771,7 @@ def admin_event_dashboard(event_id):
 def admin_new_event():
     if request.method == "POST":
         title = request.form.get("title", "").strip() or app.config["EVENT_TITLE_DEFAULT"]
-        description = request.form.get("description", "").strip()
+        description = sanitize_event_description_html(request.form.get("description", ""))
         event_date = request.form.get("event_date", "").strip()
         event_time = request.form.get("event_time", "").strip()
         has_fee = 1 if request.form.get("has_fee") == "on" else 0
@@ -1551,7 +1828,7 @@ def admin_edit_event(event_id):
 
     if request.method == "POST":
         title = request.form.get("title", "").strip() or app.config["EVENT_TITLE_DEFAULT"]
-        description = request.form.get("description", "").strip()
+        description = sanitize_event_description_html(request.form.get("description", ""))
         event_date = request.form.get("event_date", "").strip()
         event_time = request.form.get("event_time", "").strip()
         has_fee = 1 if request.form.get("has_fee") == "on" else 0
@@ -1590,7 +1867,7 @@ def admin_edit_event(event_id):
         )
         flash("Az esemény frissítve.", "success")
         return redirect(url_for("admin_event_dashboard", event_id=event_id))
-    return render_template("admin_event_form.html", mode="edit", event=event_row)
+    return render_template("admin_event_form.html", mode="edit", event=build_public_event_view(event_row))
 
 
 @app.route("/admin/events/<int:event_id>/delete", methods=["GET", "POST"])
@@ -1771,6 +2048,7 @@ def admin_move_player(registration_id):
         """,
         (team_number, max(2, slot), slot, registration_id),
     )
+    activate_stored_team_name_idea(registration_id)
     flash("A játékos áthelyezve.", "success")
     return redirect(url_for("admin_teams", event_id=event_id))
 
