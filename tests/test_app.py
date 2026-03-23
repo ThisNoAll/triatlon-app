@@ -355,6 +355,34 @@ class TriatlonAppTests(unittest.TestCase):
 
         self.assertEqual(final_name, "Kesoi Nev")
 
+    def test_score_sheet_uses_visible_team_name_and_fallback(self):
+        event_id = self.create_event("Pontozolap Kupa", "pontozolap-kupa")
+        reg1 = self.create_registration(event_id, "Teszt Elek", "teszt1@example.com", assigned_team=1, assigned_slot=1)
+        self.create_registration(event_id, "Minta Bela", "teszt2@example.com", assigned_team=1, assigned_slot=2)
+        self.create_registration(event_id, "Harmadik Fo", "teszt3@example.com", assigned_team=2, assigned_slot=1)
+        self.create_registration(event_id, "Negyedik Fo", "teszt4@example.com", assigned_team=2, assigned_slot=2)
+
+        with self.app.app_context():
+            app_module.execute(
+                """
+                INSERT INTO team_name_proposals (
+                    event_id, team_number, proposed_name, proposed_by_registration_id, status, created_at, is_admin_override
+                )
+                VALUES (?, ?, ?, ?, 'pending', ?, 0)
+                """,
+                (event_id, 1, "Villamkiflik", reg1, "2026-03-21 10:00:00"),
+            )
+
+        with self.client.session_transaction() as session:
+            session["admin_logged_in"] = True
+
+        response = self.client.get(f"/admin/score-sheet/{event_id}")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("Villamkiflik", html)
+        self.assertIn("Csapat 2", html)
+
 
 if __name__ == "__main__":
     unittest.main()
