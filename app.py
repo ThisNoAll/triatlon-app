@@ -1229,10 +1229,16 @@ def save_uploaded_event_result_image(uploaded_file):
         raise ValueError("Az eredménykép csak PNG, JPG, JPEG, GIF vagy WEBP lehet.")
 
     Image = get_pillow_image_module()
+    try:
+        from PIL import ImageOps
+    except Exception:
+        ImageOps = None
     os.makedirs(EVENT_RESULT_IMAGE_UPLOAD_DIR, exist_ok=True)
 
     try:
         with Image.open(uploaded_file.stream) as source:
+            if ImageOps is not None:
+                source = ImageOps.exif_transpose(source)
             image = source.convert("RGB")
     except Exception as exc:
         raise ValueError("A feltöltött eredménykép nem értelmezhető képként.") from exc
