@@ -1252,26 +1252,18 @@ def save_uploaded_event_result_image(uploaded_file):
         target_width = EVENT_RESULT_IMAGE_LANDSCAPE_WIDTH
         target_height = EVENT_RESULT_IMAGE_LANDSCAPE_HEIGHT
 
-    target_ratio = target_width / target_height
-    source_ratio = width / height if height else target_ratio
-
-    if source_ratio > target_ratio:
-        crop_width = int(height * target_ratio)
-        crop_height = height
-    else:
-        crop_width = width
-        crop_height = int(width / target_ratio)
-
-    left = max((width - crop_width) // 2, 0)
-    top = max((height - crop_height) // 2, 0)
-    image = image.crop((left, top, left + crop_width, top + crop_height))
-
     resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
-    image = image.resize((target_width, target_height), resampling)
+    image.thumbnail((target_width, target_height), resampling)
+
+    # Keep the full uploaded content (no center-crop): pad to target canvas.
+    canvas = Image.new("RGB", (target_width, target_height), (248, 250, 252))
+    paste_x = max((target_width - image.width) // 2, 0)
+    paste_y = max((target_height - image.height) // 2, 0)
+    canvas.paste(image, (paste_x, paste_y))
 
     stored_name = f"result-{uuid.uuid4().hex}.jpg"
     target_path = os.path.join(EVENT_RESULT_IMAGE_UPLOAD_DIR, stored_name)
-    image.save(target_path, format="JPEG", quality=90, optimize=True)
+    canvas.save(target_path, format="JPEG", quality=90, optimize=True)
     return f"/static/{PERSIST_SUBDIR}/event_results/{stored_name}"
 
 
