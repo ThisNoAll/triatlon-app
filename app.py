@@ -1269,6 +1269,34 @@ def save_uploaded_event_result_image(uploaded_file):
     return f"/static/{PERSIST_SUBDIR}/event_results/{stored_name}"
 
 
+def delete_event_result_image_file(image_path):
+    normalized_path = (image_path or "").strip()
+    if not normalized_path:
+        return
+
+    prefixes = [
+        "/static/event_results/",
+        f"/static/{PERSIST_SUBDIR}/event_results/",
+    ]
+
+    for prefix in prefixes:
+        if not normalized_path.startswith(prefix):
+            continue
+
+        filename = normalized_path[len(prefix) :]
+        candidate_paths = [
+            os.path.join(EVENT_RESULT_IMAGE_UPLOAD_DIR, filename),
+            os.path.join(BASE_DIR, "static", "event_results", filename),
+        ]
+        for abs_path in candidate_paths:
+            if os.path.isfile(abs_path):
+                try:
+                    os.remove(abs_path)
+                except OSError:
+                    pass
+        break
+
+
 def enrich_discipline_media(discipline_row):
     if not discipline_row:
         return discipline_row
@@ -3344,13 +3372,20 @@ def admin_event_results(event_id):
             return redirect(url_for("admin_event_results", event_id=event_id))
 
         image_path = existing_image_path
+        delete_image_requested = request.form.get(f"result_delete_image_{team_number_int}") == "1"
         uploaded_image = request.files.get(f"result_image_{team_number_int}")
         if uploaded_image and getattr(uploaded_image, "filename", ""):
             try:
-                image_path = save_uploaded_event_result_image(uploaded_image)
+                new_image_path = save_uploaded_event_result_image(uploaded_image)
             except ValueError as exc:
                 flash(str(exc), "error")
                 return redirect(url_for("admin_event_results", event_id=event_id))
+            if existing_image_path and existing_image_path != new_image_path:
+                delete_event_result_image_file(existing_image_path)
+            image_path = new_image_path
+        elif delete_image_requested and existing_image_path:
+            delete_event_result_image_file(existing_image_path)
+            image_path = ""
 
         discipline_points = []
         total_points = 0
