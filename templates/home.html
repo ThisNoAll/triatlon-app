@@ -82,16 +82,19 @@
     .results-board h3 { margin:0 0 10px; }
     .result-image { width:auto; max-width:320px; max-height:420px; height:auto; border-radius:10px; border:1px solid #dbe7f4; object-fit:contain; margin-top:8px; background:#f8fafc; display:block; }
     .results-table { margin-top:12px; border:1px solid #dbe7f4; border-radius:12px; overflow:hidden; background:#fff; }
-    .results-row { display:grid; grid-template-columns:70px 1fr 140px; gap:10px; padding:12px; border-bottom:1px solid #e2e8f0; align-items:start; }
+    .results-row { display:grid; grid-template-columns:92px 1fr 170px; gap:12px; padding:14px; border-bottom:1px solid #e2e8f0; align-items:start; }
     .results-row:last-child { border-bottom:0; }
     .results-row.place-1 { background:linear-gradient(135deg, #fff7d6, #fffef7); border-left:4px solid #d4a017; }
     .results-row.place-2 { background:linear-gradient(135deg, #f2f4f8, #ffffff); border-left:4px solid #9ca3af; }
     .results-row.place-3 { background:linear-gradient(135deg, #fce9da, #fffaf5); border-left:4px solid #b5651d; }
-    .results-points { font-weight:700; text-align:right; }
+    .results-placement { display:flex; align-items:flex-start; justify-content:center; }
+    .results-placement-number { min-width:66px; text-align:center; font-size:38px; font-weight:900; line-height:1; letter-spacing:-0.04em; color:#0b1f42; padding:10px 8px; border-radius:16px; background:#ffffff; border:1px solid #dbe7f4; box-shadow:0 8px 20px rgba(15,23,42,.08); }
+    .results-points { text-align:right; display:grid; gap:4px; justify-items:end; align-content:start; padding:10px 12px; border-radius:16px; background:#ffffff; border:1px solid #dbe7f4; box-shadow:0 8px 20px rgba(15,23,42,.08); }
+    .results-points-value { font-size:40px; font-weight:900; line-height:1; letter-spacing:-0.03em; color:#0b1f42; }
     .result-members { margin-top:6px; font-size:13px; color:var(--muted); }
     .discipline-score-list { margin-top:8px; display:grid; gap:6px; }
     .discipline-score-item { display:flex; justify-content:space-between; gap:10px; font-size:13px; color:var(--text); border:1px solid #e2e8f0; background:#f8fafc; border-radius:10px; padding:6px 8px; }
-    .results-total-label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+    .results-total-label { display:block; font-size:12px; color:var(--muted); margin-bottom:0; text-transform:uppercase; letter-spacing:.06em; font-weight:800; }
     .discipline-board h3 { margin:0 0 10px; }
     .discipline-list-public { display:grid; gap:10px; margin-bottom:10px; }
     .discipline-item-public { border:1px solid #dbe7f4; background:#fff; border-radius:14px; padding:10px 12px; }
@@ -131,8 +134,10 @@
     .section-title { margin-bottom:14px; display:flex; justify-content:space-between; align-items:end; gap:16px; }
     @media (max-width:980px) {
       .hero-grid, .grid-2, .stats, .teams-grid, .mini-grid { grid-template-columns:1fr; }
-      .results-row { grid-template-columns:60px 1fr; }
-      .results-points { grid-column:2; text-align:left; }
+      .results-row { grid-template-columns:76px 1fr; gap:10px; }
+      .results-placement-number { min-width:58px; font-size:30px; padding:8px 6px; border-radius:14px; }
+      .results-points { grid-column:2; justify-items:start; text-align:left; width:100%; }
+      .results-points-value { font-size:34px; }
       h1 { font-size:34px; }
     }
   </style>
@@ -158,7 +163,7 @@
                 <div class="results-table">
                   {% for row in event["team_results"] %}
                     <div class="results-row {% if row['placement'] in (1, 2, 3) %}place-{{ row['placement'] }}{% endif %}">
-                      <div><strong>{{ row["placement"] }}.</strong></div>
+                      <div class="results-placement"><strong class="results-placement-number">{{ row["placement"] }}.</strong></div>
                       <div>
                         <div><strong>{{ row["team_name"] }}</strong>{% if row["is_tie"] %} <span class="small">(döntetlen)</span>{% endif %}</div>
                         {% if row["member_names"] %}
@@ -176,7 +181,7 @@
                         {% endif %}
                         {% if row["image_path"] %}<img class="result-image" src="{{ row['image_path'] }}" alt="{{ row['team_name'] }}">{% endif %}
                       </div>
-                      <div class="results-points"><span class="results-total-label">Összpont</span>{{ row["total_points"] }}</div>
+                      <div class="results-points"><span class="results-total-label">Összpont</span><span class="results-points-value">{{ row["total_points"] }}</span></div>
                     </div>
                   {% endfor %}
                 </div>
