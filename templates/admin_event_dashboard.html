@@ -82,6 +82,7 @@
           <a href="{{ url_for('event_home', slug=event['slug']) }}" class="btn btn-secondary">Publikus megnyitás</a>
           <a href="{{ url_for('admin_teams', event_id=event['id']) }}" class="btn btn-secondary">Részletes csapatkezelés</a>
           <a href="{{ url_for('admin_score_sheet', event_id=event['id']) }}" class="btn btn-secondary">Pontozólap</a>
+          <a href="{{ url_for('admin_event_results', event_id=event['id']) }}" class="btn btn-secondary">Eredményhirdetés</a>
         </div>
       </div>
     </div>

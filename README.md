@@ -130,3 +130,39 @@ Részletes leírás:
 ## Fontos megjegyzés
 
 Az alkalmazás jelenleg SQLite-ot használ. Kis-közepes forgalmú, egyszerű eseménykezeléshez ez még teljesen jó lehet, de érdemes rendszeresen menteni az adatbázist.
+
+## Render deploy (adatmegorzeshez)
+
+A repoban van egy `render.yaml`, ami ugy van beallitva, hogy:
+
+- a web service `starter` plan-on fusson
+- legyen Persistent Disk mountolva ide: `/opt/render/project/src/static/user-data`
+- az SQLite adatbazis fajl is ezen a diszken legyen:
+  `DATABASE_PATH=/opt/render/project/src/static/user-data/triatlon.sqlite3`
+- a feltoltott kepek/avatarok is ezen a diszken maradjanak meg
+
+Mi fog megmaradni ujrainditas utan:
+
+- esemenyek es nevezesek (adatbazis)
+- feltoltott eredmenykepek
+- feltoltott avatarok
+- feltoltott versenyszam-kepek
+
+Fontos Render limitacio:
+
+- a Free web service alvas utan felkel, de nem tamogat Persistent Disket
+- ha biztos adatmegorzes kell (kepek + sqlite), web service plan legyen legalabb `starter`
+
+Render dokumentacio:
+
+- https://render.com/free
+
+### Meglevo online adatok megtartasa (ajanlott lepesek)
+
+1. A regi szolgaltatasrol mentsd le az aktualis `triatlon.sqlite3` fajlt.
+2. Az uj Render service-ben engedelyezd a Persistent Disket (a fenti mount path-ra).
+3. Masold be a mentett DB fajlt a diszkre:
+   `/opt/render/project/src/static/user-data/triatlon.sqlite3`
+4. Deploy utan ellenorizd az admin dashboardot es a publikus esemenylistat.
+
+Ha a regi service is SQLite-ot hasznalt es nem volt persistent diszk, akkor a legutolso allapot csak akkor mentheto, ha meg most le tudod menteni a fajlt a regi instance-bol.

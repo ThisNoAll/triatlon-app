@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Eredményhirdetés - {{ event["title"] }}</title>
+  <style>
+    :root { --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --muted:#64748b; --line:#e2e8f0; --primary:#0f172a; --shadow:0 10px 30px rgba(15,23,42,.08); --radius:20px; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Arial, Helvetica, sans-serif; background:var(--bg); color:var(--text); }
+    .container { max-width:1200px; margin:0 auto; padding:24px; }
+    .topbar { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; }
+    .btn, button { display:inline-block; border:0; border-radius:14px; padding:12px 16px; font-size:15px; font-weight:700; text-decoration:none; cursor:pointer; }
+    .btn-primary, button { background:var(--primary); color:#fff; }
+    .btn-secondary { background:#fff; color:var(--text); border:1px solid var(--line); }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:22px; box-shadow:var(--shadow); }
+    .hint { margin:12px 0 16px; padding:12px; border-radius:12px; border:1px solid #dbeafe; background:#eff6ff; color:#1e3a8a; }
+    .table-wrap { overflow:auto; }
+    table { width:100%; border-collapse:collapse; min-width:900px; }
+    th, td { border-bottom:1px solid var(--line); padding:10px 8px; text-align:left; vertical-align:top; }
+    th { font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+    .cell-team { min-width:220px; }
+    .cell-points input { width:90px; border:1px solid #cbd5e1; border-radius:10px; padding:8px 10px; }
+    .thumb { width:120px; height:90px; object-fit:cover; border-radius:10px; border:1px solid var(--line); background:#f8fafc; }
+    .small { color:var(--muted); font-size:13px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div>
+        <h1 style="margin:0 0 8px;">Eredményhirdetés</h1>
+        <div class="small"><strong>{{ event["title"] }}</strong> · Esemény ideje: {{ format_dt_display(event["event_at"]) }}</div>
+      </div>
+      <div class="actions">
+        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary">Dashboard</a>
+        <a href="{{ url_for('admin_event_dashboard', event_id=event['id']) }}" class="btn btn-secondary">Esemény kezelése</a>
+        <a href="{{ url_for('event_home', slug=event['slug']) }}" class="btn btn-secondary">Publikus oldal</a>
+      </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="card" style="margin-bottom:12px;">
+          {% for category, message in messages %}
+            <div class="small" style="margin-bottom:6px;"><strong>{{ category|upper }}</strong>: {{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="card">
+      <div class="hint">
+        Add meg minden csapat pontszámát versenyszámonként. A rendszer automatikusan kiszámolja az összpontot és a helyezéseket.
+        Az azonos összpontszám döntetlen helyezést eredményez.
+      </div>
+
+      {% if result_rows and disciplines %}
+        <form method="post" enctype="multipart/form-data">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="cell-team">Csapat</th>
+                  {% for discipline in disciplines %}
+                    <th>{{ discipline["name"] }}</th>
+                  {% endfor %}
+                  <th>Összpont (előnézet)</th>
+                  <th>Kép</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in result_rows %}
+                  <tr>
+                    <td class="cell-team">
+                      <strong>{{ row["team_name"] }}</strong><br>
+                      <span class="small">Csapat {{ row["team_number"] }} · {{ row["member_count"] }} fő</span>
+                      <input type="hidden" name="result_team_number" value="{{ row['team_number'] }}">
+                      <input type="hidden" name="result_existing_image_path" value="{{ row['image_path'] or '' }}">
+                    </td>
+                    {% for score in row["discipline_points"] %}
+                      <td class="cell-points">
+                        <input type="number" min="0" name="points_{{ row['team_number'] }}_{{ score['discipline_id'] }}" value="{{ score['points'] }}" required>
+                      </td>
+                    {% endfor %}
+                    <td><strong>{{ row["total_points"] }}</strong></td>
+                    <td>
+                      <input name="result_image_{{ row['team_number'] }}" type="file" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp">
+                      <div class="small">Automatikus konvertálás: 800×600</div>
+                      {% if row["image_path"] %}
+                        <img class="thumb" src="{{ row['image_path'] }}" alt="{{ row['team_name'] }}">
+                      {% else %}
+                        <div class="small">Nincs kép</div>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <button type="submit" style="margin-top:14px;">Eredmények mentése</button>
+        </form>
+      {% elif not disciplines %}
+        <div class="small">Ehhez az eseményhez nincs fix versenyszám beállítva.</div>
+      {% else %}
+        <div class="small">Még nincs induló csapat az eredményhirdetéshez.</div>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

@@ -3,9 +3,11 @@ import re
 import sqlite3
 import random
 import unicodedata
+import uuid
 from types import SimpleNamespace
 from functools import wraps
 from html.parser import HTMLParser
+from urllib.parse import parse_qs, urlparse
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from flask import (
@@ -20,6 +22,7 @@ from flask import (
     g,
 )
 from markupsafe import Markup, escape
+from werkzeug.utils import secure_filename
 
 # --------------------------------------------------
 # Optional Google login via Authlib
@@ -37,6 +40,8 @@ except Exception:
 load_dotenv()
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+PERSIST_SUBDIR = (os.getenv("PERSIST_SUBDIR", "user-data").strip() or "user-data").strip("/\\")
+PERSIST_STATIC_DIR = os.path.join(BASE_DIR, "static", PERSIST_SUBDIR)
 
 
 def resolve_database_path():
@@ -81,6 +86,30 @@ PAYMENT_INVALID = "invalid"
 PAYMENT_METHOD_TRANSFER = "transfer"
 PAYMENT_METHOD_CASH = "cash"
 PAYMENT_METHOD_NONE = "none"
+
+DISCIPLINE_IMAGE_UPLOAD_DIR = os.path.join(PERSIST_STATIC_DIR, "uploads", "discipline_images")
+ALLOWED_DISCIPLINE_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+TEAM_AVATAR_UPLOAD_DIR = os.path.join(PERSIST_STATIC_DIR, "team_avatars", "custom")
+ALLOWED_TEAM_AVATAR_UPLOAD_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+TEAM_AVATAR_TARGET_SIZE = 256
+EVENT_RESULT_IMAGE_UPLOAD_DIR = os.path.join(PERSIST_STATIC_DIR, "event_results")
+ALLOWED_EVENT_RESULT_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+EVENT_RESULT_IMAGE_WIDTH = 800
+EVENT_RESULT_IMAGE_HEIGHT = 600
+TEAM_AVATAR_CATALOG = [
+    {"code": "avatar-01", "name": "Láng", "image_path": "/static/team_avatars/avatar-01.svg"},
+    {"code": "avatar-02", "name": "Villám", "image_path": "/static/team_avatars/avatar-02.svg"},
+    {"code": "avatar-03", "name": "Hullám", "image_path": "/static/team_avatars/avatar-03.svg"},
+    {"code": "avatar-04", "name": "Hegy", "image_path": "/static/team_avatars/avatar-04.svg"},
+    {"code": "avatar-05", "name": "Csillag", "image_path": "/static/team_avatars/avatar-05.svg"},
+    {"code": "avatar-06", "name": "Rakéta", "image_path": "/static/team_avatars/avatar-06.svg"},
+    {"code": "avatar-07", "name": "Korona", "image_path": "/static/team_avatars/avatar-07.svg"},
+    {"code": "avatar-08", "name": "Sárkány", "image_path": "/static/team_avatars/avatar-08.svg"},
+    {"code": "avatar-09", "name": "Pajzs", "image_path": "/static/team_avatars/avatar-09.svg"},
+    {"code": "avatar-10", "name": "Sas", "image_path": "/static/team_avatars/avatar-10.svg"},
+    {"code": "avatar-11", "name": "Farkas", "image_path": "/static/team_avatars/avatar-11.svg"},
+    {"code": "avatar-12", "name": "Meteorit", "image_path": "/static/team_avatars/avatar-12.svg"},
+]
 
 # --------------------------------------------------
 # OAuth
@@ -202,6 +231,8 @@ def init_db():
                     title TEXT NOT NULL,
                     slug TEXT,
                     description TEXT,
+                    results_html TEXT,
+                    results_published_at TEXT,
                     event_at TEXT NOT NULL,
                     registration_deadline TEXT NOT NULL,
                     created_at TEXT NOT NULL,
@@ -231,12 +262,13 @@ def init_db():
                     pending_position INTEGER,
                     payment_status TEXT NOT NULL DEFAULT 'paid',
                     payment_method TEXT NOT NULL DEFAULT 'none',
-                    payment_note TEXT,
-                    is_manual INTEGER NOT NULL DEFAULT 0,
-                    removed_from_team INTEGER NOT NULL DEFAULT 0,
-                    is_deleted INTEGER NOT NULL DEFAULT 0,
-                    pending_team_name_idea TEXT
-                )
+                payment_note TEXT,
+                is_manual INTEGER NOT NULL DEFAULT 0,
+                removed_from_team INTEGER NOT NULL DEFAULT 0,
+                is_deleted INTEGER NOT NULL DEFAULT 0,
+                pending_team_name_idea TEXT,
+                pending_team_avatar_idea INTEGER
+            )
                 """
             )
             cur.execute(
@@ -266,6 +298,96 @@ def init_db():
                 )
                 """
             )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS disciplines (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    description TEXT NOT NULL,
+                    image_path TEXT,
+                    youtube_url TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS event_disciplines (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    discipline_id INTEGER NOT NULL REFERENCES disciplines(id),
+                    role TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE(event_id, discipline_id, role)
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS event_extra_votes (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    registration_id INTEGER NOT NULL REFERENCES registrations(id),
+                    discipline_id INTEGER NOT NULL REFERENCES disciplines(id),
+                    created_at TEXT NOT NULL,
+                    UNIQUE(event_id, registration_id)
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS team_avatars (
+                    id SERIAL PRIMARY KEY,
+                    code TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
+                    image_path TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS team_avatar_selections (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    team_number INTEGER NOT NULL,
+                    avatar_id INTEGER NOT NULL REFERENCES team_avatars(id),
+                    selected_by_registration_id INTEGER NOT NULL REFERENCES registrations(id),
+                    created_at TEXT NOT NULL,
+                    UNIQUE(event_id, team_number)
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS event_results (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    team_number INTEGER NOT NULL,
+                    placement INTEGER NOT NULL,
+                    points TEXT,
+                    note TEXT,
+                    image_path TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(event_id, team_number)
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS event_result_points (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    team_number INTEGER NOT NULL,
+                    discipline_id INTEGER NOT NULL REFERENCES disciplines(id),
+                    points INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(event_id, team_number, discipline_id)
+                )
+                """
+            )
         db.commit()
     else:
         db.executescript(
@@ -275,6 +397,8 @@ def init_db():
                 title TEXT NOT NULL,
                 slug TEXT UNIQUE,
                 description TEXT,
+                results_html TEXT,
+                results_published_at TEXT,
                 event_at TEXT NOT NULL,
                 registration_deadline TEXT NOT NULL,
                 created_at TEXT NOT NULL,
@@ -309,6 +433,8 @@ def init_db():
                 is_manual INTEGER NOT NULL DEFAULT 0,
                 removed_from_team INTEGER NOT NULL DEFAULT 0,
                 is_deleted INTEGER NOT NULL DEFAULT 0,
+                pending_team_name_idea TEXT,
+                pending_team_avatar_idea INTEGER,
 
                 FOREIGN KEY(event_id) REFERENCES events(id)
             );
@@ -339,10 +465,94 @@ def init_db():
                 FOREIGN KEY(proposal_id) REFERENCES team_name_proposals(id),
                 FOREIGN KEY(registration_id) REFERENCES registrations(id)
             );
+
+            CREATE TABLE IF NOT EXISTS disciplines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT NOT NULL,
+                image_path TEXT,
+                youtube_url TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS event_disciplines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                discipline_id INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+
+                UNIQUE(event_id, discipline_id, role),
+                FOREIGN KEY(event_id) REFERENCES events(id),
+                FOREIGN KEY(discipline_id) REFERENCES disciplines(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS event_extra_votes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                registration_id INTEGER NOT NULL,
+                discipline_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+
+                UNIQUE(event_id, registration_id),
+                FOREIGN KEY(event_id) REFERENCES events(id),
+                FOREIGN KEY(registration_id) REFERENCES registrations(id),
+                FOREIGN KEY(discipline_id) REFERENCES disciplines(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS team_avatars (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                image_path TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS team_avatar_selections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                team_number INTEGER NOT NULL,
+                avatar_id INTEGER NOT NULL,
+                selected_by_registration_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(event_id, team_number),
+                FOREIGN KEY(event_id) REFERENCES events(id),
+                FOREIGN KEY(avatar_id) REFERENCES team_avatars(id),
+                FOREIGN KEY(selected_by_registration_id) REFERENCES registrations(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS event_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                team_number INTEGER NOT NULL,
+                placement INTEGER NOT NULL,
+                points TEXT,
+                note TEXT,
+                image_path TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(event_id, team_number),
+                FOREIGN KEY(event_id) REFERENCES events(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS event_result_points (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                team_number INTEGER NOT NULL,
+                discipline_id INTEGER NOT NULL,
+                points INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(event_id, team_number, discipline_id),
+                FOREIGN KEY(event_id) REFERENCES events(id),
+                FOREIGN KEY(discipline_id) REFERENCES disciplines(id)
+            );
             """
         )
     ensure_event_schema(db)
     ensure_registration_schema(db)
+    ensure_discipline_schema(db)
+    ensure_event_results_schema(db)
     db.commit()
 
 
@@ -350,6 +560,8 @@ def ensure_event_schema(db):
     if get_database_engine() == "postgres":
         with db.cursor() as cur:
             cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS slug TEXT")
+            cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS results_html TEXT")
+            cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS results_published_at TEXT")
             cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_events_slug_unique ON events (slug)")
         db.commit()
         rows = query_all("SELECT id, title, event_at, slug FROM events ORDER BY id ASC")
@@ -357,6 +569,10 @@ def ensure_event_schema(db):
         columns = {row["name"] for row in db.execute("PRAGMA table_info(events)").fetchall()}
         if "slug" not in columns:
             db.execute("ALTER TABLE events ADD COLUMN slug TEXT")
+        if "results_html" not in columns:
+            db.execute("ALTER TABLE events ADD COLUMN results_html TEXT")
+        if "results_published_at" not in columns:
+            db.execute("ALTER TABLE events ADD COLUMN results_published_at TEXT")
         rows = db.execute("SELECT id, title, event_at, slug FROM events ORDER BY id ASC").fetchall()
 
     used_slugs = set()
@@ -379,11 +595,284 @@ def ensure_registration_schema(db):
     if get_database_engine() == "postgres":
         with db.cursor() as cur:
             cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS pending_team_name_idea TEXT")
+            cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS pending_team_avatar_idea INTEGER")
         db.commit()
     else:
         columns = {row["name"] for row in db.execute("PRAGMA table_info(registrations)").fetchall()}
         if "pending_team_name_idea" not in columns:
             db.execute("ALTER TABLE registrations ADD COLUMN pending_team_name_idea TEXT")
+        if "pending_team_avatar_idea" not in columns:
+            db.execute("ALTER TABLE registrations ADD COLUMN pending_team_avatar_idea INTEGER")
+
+
+def ensure_discipline_schema(db):
+    if get_database_engine() == "postgres":
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS disciplines (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    description TEXT NOT NULL,
+                    image_path TEXT,
+                    youtube_url TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS event_disciplines (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    discipline_id INTEGER NOT NULL REFERENCES disciplines(id),
+                    role TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE(event_id, discipline_id, role)
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS event_extra_votes (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    registration_id INTEGER NOT NULL REFERENCES registrations(id),
+                    discipline_id INTEGER NOT NULL REFERENCES disciplines(id),
+                    created_at TEXT NOT NULL,
+                    UNIQUE(event_id, registration_id)
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS team_avatars (
+                    id SERIAL PRIMARY KEY,
+                    code TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
+                    image_path TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS team_avatar_selections (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    team_number INTEGER NOT NULL,
+                    avatar_id INTEGER NOT NULL REFERENCES team_avatars(id),
+                    selected_by_registration_id INTEGER NOT NULL REFERENCES registrations(id),
+                    created_at TEXT NOT NULL,
+                    UNIQUE(event_id, team_number)
+                )
+                """
+            )
+            cur.execute("ALTER TABLE disciplines ADD COLUMN IF NOT EXISTS image_path TEXT")
+            cur.execute("ALTER TABLE disciplines ADD COLUMN IF NOT EXISTS youtube_url TEXT")
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_event_disciplines_event_role
+                ON event_disciplines (event_id, role, sort_order, id)
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_event_extra_votes_event_discipline
+                ON event_extra_votes (event_id, discipline_id)
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_team_avatar_selections_event_team
+                ON team_avatar_selections (event_id, team_number)
+                """
+            )
+        db.commit()
+    else:
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS disciplines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT NOT NULL,
+                image_path TEXT,
+                youtube_url TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS event_disciplines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                discipline_id INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+
+                UNIQUE(event_id, discipline_id, role),
+                FOREIGN KEY(event_id) REFERENCES events(id),
+                FOREIGN KEY(discipline_id) REFERENCES disciplines(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS event_extra_votes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                registration_id INTEGER NOT NULL,
+                discipline_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+
+                UNIQUE(event_id, registration_id),
+                FOREIGN KEY(event_id) REFERENCES events(id),
+                FOREIGN KEY(registration_id) REFERENCES registrations(id),
+                FOREIGN KEY(discipline_id) REFERENCES disciplines(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS team_avatars (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                image_path TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS team_avatar_selections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                team_number INTEGER NOT NULL,
+                avatar_id INTEGER NOT NULL,
+                selected_by_registration_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(event_id, team_number),
+                FOREIGN KEY(event_id) REFERENCES events(id),
+                FOREIGN KEY(avatar_id) REFERENCES team_avatars(id),
+                FOREIGN KEY(selected_by_registration_id) REFERENCES registrations(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_event_disciplines_event_role
+            ON event_disciplines (event_id, role, sort_order, id);
+
+            CREATE INDEX IF NOT EXISTS idx_event_extra_votes_event_discipline
+            ON event_extra_votes (event_id, discipline_id);
+
+            CREATE INDEX IF NOT EXISTS idx_team_avatar_selections_event_team
+            ON team_avatar_selections (event_id, team_number);
+            """
+        )
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(disciplines)").fetchall()}
+        if "image_path" not in columns:
+            db.execute("ALTER TABLE disciplines ADD COLUMN image_path TEXT")
+        if "youtube_url" not in columns:
+            db.execute("ALTER TABLE disciplines ADD COLUMN youtube_url TEXT")
+
+    ensure_team_avatar_catalog_seeded()
+
+
+def ensure_event_results_schema(db):
+    if get_database_engine() == "postgres":
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS event_results (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    team_number INTEGER NOT NULL,
+                    placement INTEGER NOT NULL,
+                    points TEXT,
+                    note TEXT,
+                    image_path TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(event_id, team_number)
+                )
+                """
+            )
+            cur.execute("ALTER TABLE event_results ADD COLUMN IF NOT EXISTS image_path TEXT")
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS event_result_points (
+                    id SERIAL PRIMARY KEY,
+                    event_id INTEGER NOT NULL REFERENCES events(id),
+                    team_number INTEGER NOT NULL,
+                    discipline_id INTEGER NOT NULL REFERENCES disciplines(id),
+                    points INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(event_id, team_number, discipline_id)
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_event_results_event_placement
+                ON event_results (event_id, placement, team_number)
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_event_result_points_event_team
+                ON event_result_points (event_id, team_number, discipline_id)
+                """
+            )
+        db.commit()
+    else:
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS event_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                team_number INTEGER NOT NULL,
+                placement INTEGER NOT NULL,
+                points TEXT,
+                note TEXT,
+                image_path TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(event_id, team_number),
+                FOREIGN KEY(event_id) REFERENCES events(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_event_results_event_placement
+            ON event_results (event_id, placement, team_number);
+
+            CREATE TABLE IF NOT EXISTS event_result_points (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                team_number INTEGER NOT NULL,
+                discipline_id INTEGER NOT NULL,
+                points INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(event_id, team_number, discipline_id),
+                FOREIGN KEY(event_id) REFERENCES events(id),
+                FOREIGN KEY(discipline_id) REFERENCES disciplines(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_event_result_points_event_team
+            ON event_result_points (event_id, team_number, discipline_id);
+            """
+        )
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(event_results)").fetchall()}
+        if "image_path" not in columns:
+            db.execute("ALTER TABLE event_results ADD COLUMN image_path TEXT")
+
+
+def ensure_team_avatar_catalog_seeded():
+    existing_count_row = query_one("SELECT COUNT(*) AS cnt FROM team_avatars")
+    existing_count = int(existing_count_row["cnt"]) if existing_count_row else 0
+    if existing_count > 0:
+        return
+
+    existing_codes = {
+        row["code"] for row in query_all("SELECT code FROM team_avatars")
+    }
+    for item in TEAM_AVATAR_CATALOG:
+        if item["code"] in existing_codes:
+            continue
+        execute(
+            """
+            INSERT INTO team_avatars (code, name, image_path, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (item["code"], item["name"], item["image_path"], now_str()),
+        )
 
 
 @app.before_request
@@ -556,6 +1045,605 @@ def get_all_events():
     return query_all("SELECT * FROM events ORDER BY event_at DESC, id DESC")
 
 
+def get_discipline_by_id(discipline_id):
+    return query_one(
+        """
+        SELECT id, name, description, image_path, youtube_url, created_at
+        FROM disciplines
+        WHERE id = ?
+        """,
+        (discipline_id,),
+    )
+
+
+def get_all_team_avatars():
+    return query_all(
+        """
+        SELECT id, code, name, image_path
+        FROM team_avatars
+        ORDER BY id ASC
+        """
+    )
+
+
+def get_team_avatar_selection(event_id, team_number):
+    return query_one(
+        """
+        SELECT s.event_id, s.team_number, s.avatar_id, a.code, a.name, a.image_path
+        FROM team_avatar_selections s
+        JOIN team_avatars a ON a.id = s.avatar_id
+        WHERE s.event_id = ? AND s.team_number = ?
+        LIMIT 1
+        """,
+        (event_id, team_number),
+    )
+
+
+def choose_team_avatar(event_id, team_number, avatar_id, registration_id):
+    avatar = query_one("SELECT id FROM team_avatars WHERE id = ?", (avatar_id,))
+    if not avatar:
+        raise ValueError("Érvénytelen avatár.")
+
+    execute(
+        """
+        INSERT INTO team_avatar_selections (
+            event_id, team_number, avatar_id, selected_by_registration_id, created_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(event_id, team_number)
+        DO UPDATE SET
+            avatar_id = excluded.avatar_id,
+            selected_by_registration_id = excluded.selected_by_registration_id,
+            created_at = excluded.created_at
+        """,
+        (event_id, team_number, avatar_id, registration_id, now_str()),
+    )
+
+
+def parse_avatar_id(value):
+    try:
+        avatar_id = int(value)
+    except (TypeError, ValueError):
+        return None
+    return avatar_id if avatar_id > 0 else None
+
+
+def avatar_exists(avatar_id):
+    if not avatar_id:
+        return False
+    row = query_one("SELECT id FROM team_avatars WHERE id = ?", (avatar_id,))
+    return row is not None
+
+
+def normalize_discipline_name(name):
+    return " ".join((name or "").strip().split())
+
+
+def normalize_discipline_description(description):
+    return " ".join((description or "").strip().split())
+
+
+def normalize_youtube_embed_url(value):
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+
+    parsed = urlparse(raw)
+    host = (parsed.netloc or "").lower()
+    path = parsed.path or ""
+    video_id = None
+
+    if "youtu.be" in host:
+        video_id = path.strip("/").split("/")[0]
+    elif "youtube.com" in host:
+        if path == "/watch":
+            video_id = parse_qs(parsed.query).get("v", [""])[0]
+        elif path.startswith("/shorts/"):
+            video_id = path.split("/")[2] if len(path.split("/")) > 2 else ""
+        elif path.startswith("/embed/"):
+            video_id = path.split("/")[2] if len(path.split("/")) > 2 else ""
+
+    video_id = (video_id or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+        return ""
+    return f"https://www.youtube.com/embed/{video_id}"
+
+
+def save_uploaded_discipline_image(uploaded_file):
+    if not uploaded_file or not getattr(uploaded_file, "filename", ""):
+        return ""
+
+    filename = secure_filename(uploaded_file.filename or "")
+    if not filename or "." not in filename:
+        raise ValueError("A feltöltött versenyszám-kép fájlneve érvénytelen.")
+
+    extension = filename.rsplit(".", 1)[1].lower()
+    if extension not in ALLOWED_DISCIPLINE_IMAGE_EXTENSIONS:
+        raise ValueError("A versenyszám-kép csak PNG, JPG, JPEG, GIF vagy WEBP lehet.")
+
+    os.makedirs(DISCIPLINE_IMAGE_UPLOAD_DIR, exist_ok=True)
+    stored_name = f"{uuid.uuid4().hex}.{extension}"
+    target_path = os.path.join(DISCIPLINE_IMAGE_UPLOAD_DIR, stored_name)
+    uploaded_file.save(target_path)
+    return f"/static/{PERSIST_SUBDIR}/uploads/discipline_images/{stored_name}"
+
+
+def get_pillow_image_module():
+    try:
+        from PIL import Image
+    except Exception as exc:
+        raise ValueError(
+            "Képfeltöltéshez telepítsd a Pillow csomagot (pip install Pillow)."
+        ) from exc
+    return Image
+
+
+def save_uploaded_team_avatar_image(uploaded_file):
+    if not uploaded_file or not getattr(uploaded_file, "filename", ""):
+        raise ValueError("Válassz ki egy avatar képet feltöltéshez.")
+
+    filename = secure_filename(uploaded_file.filename or "")
+    if not filename or "." not in filename:
+        raise ValueError("Érvénytelen avatar fájlnév.")
+
+    extension = filename.rsplit(".", 1)[1].lower()
+    if extension not in ALLOWED_TEAM_AVATAR_UPLOAD_EXTENSIONS:
+        raise ValueError("Az avatar csak PNG, JPG, JPEG, GIF vagy WEBP lehet.")
+
+    Image = get_pillow_image_module()
+    os.makedirs(TEAM_AVATAR_UPLOAD_DIR, exist_ok=True)
+
+    try:
+        with Image.open(uploaded_file.stream) as source:
+            image = source.convert("RGBA")
+    except Exception as exc:
+        raise ValueError("A feltöltött fájl nem értelmezhető képként.") from exc
+
+    width, height = image.size
+    crop_size = min(width, height)
+    left = (width - crop_size) // 2
+    top = (height - crop_size) // 2
+    image = image.crop((left, top, left + crop_size, top + crop_size))
+
+    resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+    image = image.resize((TEAM_AVATAR_TARGET_SIZE, TEAM_AVATAR_TARGET_SIZE), resampling)
+
+    stored_name = f"user-{uuid.uuid4().hex}.png"
+    target_path = os.path.join(TEAM_AVATAR_UPLOAD_DIR, stored_name)
+    image.save(target_path, format="PNG", optimize=True)
+    return f"/static/{PERSIST_SUBDIR}/team_avatars/custom/{stored_name}"
+
+
+def save_uploaded_event_result_image(uploaded_file):
+    if not uploaded_file or not getattr(uploaded_file, "filename", ""):
+        return ""
+
+    filename = secure_filename(uploaded_file.filename or "")
+    if not filename or "." not in filename:
+        raise ValueError("Érvénytelen eredménykép fájlnév.")
+
+    extension = filename.rsplit(".", 1)[1].lower()
+    if extension not in ALLOWED_EVENT_RESULT_IMAGE_EXTENSIONS:
+        raise ValueError("Az eredménykép csak PNG, JPG, JPEG, GIF vagy WEBP lehet.")
+
+    Image = get_pillow_image_module()
+    os.makedirs(EVENT_RESULT_IMAGE_UPLOAD_DIR, exist_ok=True)
+
+    try:
+        with Image.open(uploaded_file.stream) as source:
+            image = source.convert("RGB")
+    except Exception as exc:
+        raise ValueError("A feltöltött eredménykép nem értelmezhető képként.") from exc
+
+    width, height = image.size
+    target_ratio = EVENT_RESULT_IMAGE_WIDTH / EVENT_RESULT_IMAGE_HEIGHT
+    source_ratio = width / height if height else target_ratio
+
+    if source_ratio > target_ratio:
+        crop_width = int(height * target_ratio)
+        crop_height = height
+    else:
+        crop_width = width
+        crop_height = int(width / target_ratio)
+
+    left = max((width - crop_width) // 2, 0)
+    top = max((height - crop_height) // 2, 0)
+    image = image.crop((left, top, left + crop_width, top + crop_height))
+
+    resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+    image = image.resize((EVENT_RESULT_IMAGE_WIDTH, EVENT_RESULT_IMAGE_HEIGHT), resampling)
+
+    stored_name = f"result-{uuid.uuid4().hex}.jpg"
+    target_path = os.path.join(EVENT_RESULT_IMAGE_UPLOAD_DIR, stored_name)
+    image.save(target_path, format="JPEG", quality=90, optimize=True)
+    return f"/static/{PERSIST_SUBDIR}/event_results/{stored_name}"
+
+
+def enrich_discipline_media(discipline_row):
+    if not discipline_row:
+        return discipline_row
+    row = dict(discipline_row)
+    row["image_path"] = (row.get("image_path") or "").strip()
+    row["youtube_url"] = (row.get("youtube_url") or "").strip()
+    row["youtube_embed_url"] = normalize_youtube_embed_url(row["youtube_url"])
+    return row
+
+
+def get_all_disciplines():
+    rows = query_all(
+        """
+        SELECT id, name, description, image_path, youtube_url, created_at
+        FROM disciplines
+        ORDER BY lower(name) ASC, id ASC
+        """
+    )
+    return [enrich_discipline_media(row) for row in rows]
+
+
+def get_event_disciplines_by_role(event_id, role):
+    rows = query_all(
+        """
+        SELECT d.id, d.name, d.description, d.image_path, d.youtube_url, ed.sort_order
+        FROM event_disciplines ed
+        JOIN disciplines d ON d.id = ed.discipline_id
+        WHERE ed.event_id = ? AND ed.role = ?
+        ORDER BY ed.sort_order ASC, ed.id ASC
+        """,
+        (event_id, role),
+    )
+    return [enrich_discipline_media(row) for row in rows]
+
+
+def get_event_fixed_disciplines(event_id):
+    return get_event_disciplines_by_role(event_id, "fixed")
+
+
+def get_event_extra_discipline_options(event_id):
+    return get_event_disciplines_by_role(event_id, "extra")
+
+
+def unique_int_list(values):
+    unique = []
+    seen = set()
+    for value in values:
+        if value in seen:
+            continue
+        unique.append(value)
+        seen.add(value)
+    return unique
+
+
+def parse_selected_discipline_ids(raw_values, valid_ids):
+    selected = []
+    for raw in raw_values:
+        if raw is None:
+            continue
+        value = str(raw).strip()
+        if not value:
+            continue
+        try:
+            discipline_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if discipline_id in valid_ids:
+            selected.append(discipline_id)
+    return unique_int_list(selected)
+
+
+def parse_new_disciplines_from_form():
+    names = request.form.getlist("new_discipline_name[]")
+    descriptions = request.form.getlist("new_discipline_description[]")
+    targets = request.form.getlist("new_discipline_target[]")
+    youtube_urls = request.form.getlist("new_discipline_youtube_url[]")
+    images = request.files.getlist("new_discipline_image[]")
+    max_len = max(len(names), len(descriptions), len(targets), len(youtube_urls), len(images), 0)
+
+    rows = []
+    for index in range(max_len):
+        name = normalize_discipline_name(names[index] if index < len(names) else "")
+        description = normalize_discipline_description(
+            descriptions[index] if index < len(descriptions) else ""
+        )
+        target = (targets[index] if index < len(targets) else "fixed").strip().lower()
+        youtube_url = normalize_youtube_embed_url(
+            youtube_urls[index] if index < len(youtube_urls) else ""
+        )
+        image_file = images[index] if index < len(images) else None
+        has_image = bool(image_file and getattr(image_file, "filename", ""))
+
+        if not name and not description and not youtube_url and not has_image:
+            continue
+        if not name or not description:
+            raise ValueError(
+                "Új versenyszámnál a név és a leírás együtt kötelező."
+            )
+        image_path = save_uploaded_discipline_image(image_file) if has_image else ""
+        if target not in ("fixed", "extra"):
+            target = "fixed"
+        rows.append(
+            {
+                "name": name,
+                "description": description,
+                "target": target,
+                "youtube_url": youtube_url,
+                "image_path": image_path,
+            }
+        )
+    return rows
+
+
+def parse_discipline_updates_from_form():
+    ids = request.form.getlist("edit_discipline_id[]")
+    names = request.form.getlist("edit_discipline_name[]")
+    descriptions = request.form.getlist("edit_discipline_description[]")
+    youtube_urls = request.form.getlist("edit_discipline_youtube_url[]")
+    images = request.files.getlist("edit_discipline_image[]")
+    remove_image_ids = set()
+    for raw in request.form.getlist("edit_discipline_remove_image[]"):
+        try:
+            remove_image_ids.add(int(raw))
+        except (TypeError, ValueError):
+            continue
+
+    max_len = max(len(ids), len(names), len(descriptions), len(youtube_urls), len(images), 0)
+    updates = []
+    for index in range(max_len):
+        raw_id = ids[index] if index < len(ids) else ""
+        try:
+            discipline_id = int(str(raw_id).strip())
+        except (TypeError, ValueError):
+            continue
+
+        name = normalize_discipline_name(names[index] if index < len(names) else "")
+        description = normalize_discipline_description(
+            descriptions[index] if index < len(descriptions) else ""
+        )
+        youtube_url = normalize_youtube_embed_url(
+            youtube_urls[index] if index < len(youtube_urls) else ""
+        )
+        image_file = images[index] if index < len(images) else None
+
+        if not name or not description:
+            raise ValueError("A versenyszám szerkesztésénél a név és a leírás kötelező.")
+
+        image_path = ""
+        has_new_image = bool(image_file and getattr(image_file, "filename", ""))
+        if has_new_image:
+            image_path = save_uploaded_discipline_image(image_file)
+
+        updates.append(
+            {
+                "id": discipline_id,
+                "name": name,
+                "description": description,
+                "youtube_url": youtube_url,
+                "has_new_image": has_new_image,
+                "new_image_path": image_path,
+                "remove_image": discipline_id in remove_image_ids,
+            }
+        )
+    return updates
+
+
+def apply_discipline_updates_from_form():
+    updates = parse_discipline_updates_from_form()
+    for row in updates:
+        current = get_discipline_by_id(row["id"])
+        if not current:
+            continue
+
+        image_path = (current["image_path"] or "").strip()
+        if row["remove_image"]:
+            image_path = ""
+        if row["has_new_image"]:
+            image_path = row["new_image_path"]
+
+        try:
+            execute(
+                """
+                UPDATE disciplines
+                SET name = ?, description = ?, youtube_url = ?, image_path = ?
+                WHERE id = ?
+                """,
+                (
+                    row["name"],
+                    row["description"],
+                    row["youtube_url"],
+                    image_path,
+                    row["id"],
+                ),
+            )
+        except Exception as exc:
+            if "UNIQUE" in str(exc).upper():
+                raise ValueError("Már létezik versenyszám ezzel a névvel.")
+            raise
+
+
+def create_or_get_discipline(name, description, image_path="", youtube_url=""):
+    normalized_name = normalize_discipline_name(name)
+    normalized_description = normalize_discipline_description(description)
+    normalized_image_path = (image_path or "").strip()
+    normalized_youtube_url = normalize_youtube_embed_url(youtube_url)
+
+    if not normalized_name or not normalized_description:
+        raise ValueError("A versenyszám neve és leírása nem lehet üres.")
+
+    existing = query_one(
+        """
+        SELECT id, image_path, youtube_url
+        FROM disciplines
+        WHERE lower(name) = lower(?)
+        ORDER BY id ASC
+        LIMIT 1
+        """,
+        (normalized_name,),
+    )
+    if existing:
+        updates = []
+        params = []
+        if normalized_image_path and not (existing["image_path"] or "").strip():
+            updates.append("image_path = ?")
+            params.append(normalized_image_path)
+        if normalized_youtube_url and not (existing["youtube_url"] or "").strip():
+            updates.append("youtube_url = ?")
+            params.append(normalized_youtube_url)
+        if updates:
+            params.append(existing["id"])
+            execute(
+                f"UPDATE disciplines SET {', '.join(updates)} WHERE id = ?",
+                tuple(params),
+            )
+        return existing["id"]
+
+    cur = execute(
+        """
+        INSERT INTO disciplines (name, description, image_path, youtube_url, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            normalized_name,
+            normalized_description,
+            normalized_image_path,
+            normalized_youtube_url,
+            now_str(),
+        ),
+    )
+    return cur.lastrowid
+
+
+def resolve_event_discipline_selection():
+    all_disciplines = get_all_disciplines()
+    valid_ids = {row["id"] for row in all_disciplines}
+
+    fixed_ids = parse_selected_discipline_ids(
+        request.form.getlist("fixed_discipline_ids"),
+        valid_ids,
+    )
+    extra_ids = parse_selected_discipline_ids(
+        request.form.getlist("extra_option_discipline_ids"),
+        valid_ids,
+    )
+
+    new_rows = parse_new_disciplines_from_form()
+    for row in new_rows:
+        discipline_id = create_or_get_discipline(
+            row["name"],
+            row["description"],
+            image_path=row["image_path"],
+            youtube_url=row["youtube_url"],
+        )
+        if row["target"] == "extra":
+            extra_ids.append(discipline_id)
+        else:
+            fixed_ids.append(discipline_id)
+
+    fixed_ids = unique_int_list(fixed_ids)
+    fixed_set = set(fixed_ids)
+    extra_ids = [discipline_id for discipline_id in unique_int_list(extra_ids) if discipline_id not in fixed_set]
+
+    if not fixed_ids:
+        raise ValueError("Legalább egy fix versenyszámot ki kell választani.")
+
+    return fixed_ids, extra_ids
+
+
+def save_event_discipline_links(event_id, fixed_ids, extra_ids):
+    execute("DELETE FROM event_extra_votes WHERE event_id = ?", (event_id,))
+    execute("DELETE FROM event_disciplines WHERE event_id = ?", (event_id,))
+
+    order = 1
+    for discipline_id in unique_int_list(fixed_ids):
+        execute(
+            """
+            INSERT INTO event_disciplines (event_id, discipline_id, role, sort_order)
+            VALUES (?, ?, 'fixed', ?)
+            """,
+            (event_id, discipline_id, order),
+        )
+        order += 1
+
+    fixed_set = set(fixed_ids)
+    order = 1
+    for discipline_id in unique_int_list(extra_ids):
+        if discipline_id in fixed_set:
+            continue
+        execute(
+            """
+            INSERT INTO event_disciplines (event_id, discipline_id, role, sort_order)
+            VALUES (?, ?, 'extra', ?)
+            """,
+            (event_id, discipline_id, order),
+        )
+        order += 1
+
+
+def get_event_extra_vote(event_id, registration_id):
+    if not registration_id:
+        return None
+    return query_one(
+        """
+        SELECT v.*, d.name AS discipline_name
+        FROM event_extra_votes v
+        JOIN disciplines d ON d.id = v.discipline_id
+        WHERE v.event_id = ? AND v.registration_id = ?
+        LIMIT 1
+        """,
+        (event_id, registration_id),
+    )
+
+
+def get_event_extra_vote_summary(event_id):
+    options = get_event_extra_discipline_options(event_id)
+    if not options:
+        return {"total_votes": 0, "winner_id": None, "options": []}
+
+    rows = query_all(
+        """
+        SELECT discipline_id, COUNT(*) AS vote_count
+        FROM event_extra_votes
+        WHERE event_id = ?
+        GROUP BY discipline_id
+        """,
+        (event_id,),
+    )
+    count_by_id = {row["discipline_id"]: int(row["vote_count"]) for row in rows}
+
+    decorated = []
+    for option in options:
+        option_data = dict(option)
+        option_data["vote_count"] = count_by_id.get(option["id"], 0)
+        decorated.append(option_data)
+
+    total_votes = sum(option["vote_count"] for option in decorated)
+    ranked = sorted(decorated, key=lambda item: item["vote_count"], reverse=True)
+    winner_id = None
+    if ranked and ranked[0]["vote_count"] > 0:
+        if len(ranked) == 1 or ranked[0]["vote_count"] > ranked[1]["vote_count"]:
+            winner_id = ranked[0]["id"]
+
+    return {
+        "total_votes": total_votes,
+        "winner_id": winner_id,
+        "options": ranked,
+    }
+
+
+def build_admin_event_form_context(event_row=None):
+    event_view = build_public_event_view(event_row) if event_row else None
+    selected_fixed_ids = []
+    selected_extra_ids = []
+    if event_row:
+        selected_fixed_ids = [row["id"] for row in get_event_fixed_disciplines(event_row["id"])]
+        selected_extra_ids = [row["id"] for row in get_event_extra_discipline_options(event_row["id"])]
+    return {
+        "mode": "edit" if event_row else "create",
+        "event": event_view,
+        "all_disciplines": get_all_disciplines(),
+        "selected_fixed_ids": selected_fixed_ids,
+        "selected_extra_ids": selected_extra_ids,
+    }
+
+
 def delete_event_and_related_data(event_id):
     proposal_ids = query_all(
         "SELECT id FROM team_name_proposals WHERE event_id = ?",
@@ -564,7 +1652,12 @@ def delete_event_and_related_data(event_id):
     for proposal in proposal_ids:
         execute("DELETE FROM team_name_votes WHERE proposal_id = ?", (proposal["id"],))
 
+    execute("DELETE FROM team_avatar_selections WHERE event_id = ?", (event_id,))
+    execute("DELETE FROM event_results WHERE event_id = ?", (event_id,))
+    execute("DELETE FROM event_result_points WHERE event_id = ?", (event_id,))
     execute("DELETE FROM team_name_proposals WHERE event_id = ?", (event_id,))
+    execute("DELETE FROM event_extra_votes WHERE event_id = ?", (event_id,))
+    execute("DELETE FROM event_disciplines WHERE event_id = ?", (event_id,))
     execute("DELETE FROM registrations WHERE event_id = ?", (event_id,))
     execute("DELETE FROM events WHERE id = ?", (event_id,))
 
@@ -889,6 +1982,28 @@ def activate_stored_team_name_idea(registration_id):
         execute("UPDATE registrations SET pending_team_name_idea = NULL WHERE id = ?", (registration_id,))
 
 
+def activate_stored_team_avatar_idea(registration_id):
+    reg = get_registration_by_id(registration_id)
+    if not reg or reg["assigned_team"] is None:
+        return
+
+    avatar_id = parse_avatar_id(reg["pending_team_avatar_idea"])
+    if not avatar_id:
+        return
+
+    try:
+        existing = get_team_avatar_selection(reg["event_id"], reg["assigned_team"])
+        if not existing and avatar_exists(avatar_id):
+            choose_team_avatar(
+                reg["event_id"],
+                reg["assigned_team"],
+                avatar_id,
+                registration_id,
+            )
+    finally:
+        execute("UPDATE registrations SET pending_team_avatar_idea = NULL WHERE id = ?", (registration_id,))
+
+
 def build_team_name_state(event_id, team_number):
     proposal = get_visible_team_name_proposal(event_id, team_number)
     if not proposal:
@@ -939,6 +2054,7 @@ def get_my_status(event_id):
         status["team_size"] = None
         status["pending_proposal"] = None
         status["can_propose_team_name"] = False
+        status["team_avatar"] = None
         return status
 
     if reg["assigned_team"] is not None:
@@ -947,6 +2063,7 @@ def get_my_status(event_id):
         team_name_state = build_team_name_state(event_id, reg["assigned_team"])
         approved_name = get_approved_team_name(event_id, reg["assigned_team"])
         pending_proposal = get_pending_team_name_proposal(event_id, reg["assigned_team"])
+        team_avatar = get_team_avatar_selection(event_id, reg["assigned_team"])
 
         status["status_label"] = "Csapatba kerültél"
         status["team_number"] = reg["assigned_team"]
@@ -955,6 +2072,7 @@ def get_my_status(event_id):
         status["team_name_state"] = team_name_state
         status["pending_proposal"] = pending_proposal
         status["can_propose_team_name"] = not event_has_started_or_closed(event_row)
+        status["team_avatar"] = team_avatar
         return status
 
     if reg["pending_stage"] == 3:
@@ -970,6 +2088,7 @@ def get_my_status(event_id):
     status["team_name_state"] = None
     status["pending_proposal"] = None
     status["can_propose_team_name"] = False
+    status["team_avatar"] = None
     return status
 
 
@@ -991,6 +2110,7 @@ def build_public_teams(event_id):
             display_capacity = 4
 
         team_name_state = build_team_name_state(event_id, team_number)
+        team_avatar = get_team_avatar_selection(event_id, team_number)
 
         visible_names = []
         # a specifikáció szerint:
@@ -1012,6 +2132,7 @@ def build_public_teams(event_id):
                 "team_name": team_name_state["name"] if team_name_state else None,
                 "team_name_state": team_name_state,
                 "members": members,
+                "team_avatar": team_avatar,
             }
         )
     return teams
@@ -1081,6 +2202,7 @@ def assign_pending_stage_full(event_id, stage):
             (team_number, stage, slot, reg["id"]),
         )
         activate_stored_team_name_idea(reg["id"])
+        activate_stored_team_avatar_idea(reg["id"])
 
 
 def get_pending_pool(event_id, stage):
@@ -1137,9 +2259,19 @@ def finalize_pending_stage_partial(event_id, stage):
             (team_number, stage, slot, reg["id"]),
         )
         activate_stored_team_name_idea(reg["id"])
+        activate_stored_team_avatar_idea(reg["id"])
 
 
-def register_participant(event_id, name, email, provider, google_sub=None, payment_method=None, team_name_idea=None):
+def register_participant(
+    event_id,
+    name,
+    email,
+    provider,
+    google_sub=None,
+    payment_method=None,
+    team_name_idea=None,
+    team_avatar_idea_id=None,
+):
     event_row = get_event(event_id)
     if not event_row:
         raise ValueError("Az esemény nem található.")
@@ -1159,13 +2291,17 @@ def register_participant(event_id, name, email, provider, google_sub=None, payme
         payment_status = PAYMENT_PAID
         payment_method = PAYMENT_METHOD_NONE
 
+    avatar_idea_id = parse_avatar_id(team_avatar_idea_id)
+    if avatar_idea_id and not avatar_exists(avatar_idea_id):
+        raise ValueError("Érvénytelen avatar választás.")
+
     cur = execute(
         """
         INSERT INTO registrations (
             event_id, participant_name, participant_email, provider, google_sub, created_at,
-            payment_status, payment_method, payment_note, pending_team_name_idea
+            payment_status, payment_method, payment_note, pending_team_name_idea, pending_team_avatar_idea
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             event_id,
@@ -1178,6 +2314,7 @@ def register_participant(event_id, name, email, provider, google_sub=None, payme
             payment_method,
             "",
             normalize_team_name(team_name_idea or ""),
+            avatar_idea_id,
         ),
     )
     registration_id = cur.lastrowid
@@ -1187,6 +2324,7 @@ def register_participant(event_id, name, email, provider, google_sub=None, payme
     if total_after_insert <= 10:
         assign_initial_if_needed(event_id, registration_id)
         activate_stored_team_name_idea(registration_id)
+        activate_stored_team_avatar_idea(registration_id)
     elif 11 <= total_after_insert <= 15:
         queue_for_stage(event_id, registration_id, 3)
         if total_after_insert == 15:
@@ -1303,11 +2441,179 @@ def build_event_stats(event_id):
     }
 
 
+def get_event_results(event_id):
+    return query_all(
+        """
+        SELECT id, event_id, team_number, placement, points, note, image_path, created_at, updated_at
+        FROM event_results
+        WHERE event_id = ?
+        ORDER BY placement ASC, team_number ASC
+        """,
+        (event_id,),
+    )
+
+
+def get_event_results_by_team(event_id):
+    rows = get_event_results(event_id)
+    return {row["team_number"]: row for row in rows}
+
+
+def get_event_result_points(event_id):
+    return query_all(
+        """
+        SELECT rp.event_id, rp.team_number, rp.discipline_id, rp.points, d.name AS discipline_name
+        FROM event_result_points rp
+        JOIN disciplines d ON d.id = rp.discipline_id
+        WHERE rp.event_id = ?
+        ORDER BY rp.team_number ASC, d.name ASC
+        """,
+        (event_id,),
+    )
+
+
+def get_event_result_points_by_team(event_id):
+    rows = get_event_result_points(event_id)
+    by_team = {}
+    for row in rows:
+        team_bucket = by_team.setdefault(row["team_number"], {})
+        team_bucket[row["discipline_id"]] = {
+            "discipline_id": row["discipline_id"],
+            "discipline_name": row["discipline_name"],
+            "points": int(row["points"]),
+        }
+    return by_team
+
+
+def get_team_display_name(event_id, team_number):
+    team_name_state = build_team_name_state(event_id, team_number)
+    if team_name_state and team_name_state.get("name"):
+        return team_name_state["name"]
+    approved_name = get_approved_team_name(event_id, team_number)
+    if approved_name:
+        return approved_name
+    return f"Csapat {team_number}"
+
+
+def build_event_results_editor_rows(event_id):
+    existing_results = get_event_results_by_team(event_id)
+    points_by_team = get_event_result_points_by_team(event_id)
+    disciplines = get_event_fixed_disciplines(event_id)
+
+    teams = []
+    for team in build_public_teams(event_id):
+        if team["count"] == 0:
+            continue
+        teams.append(
+            {
+                "team_number": team["team_number"],
+                "team_name": team["team_name"] or f"Csapat {team['team_number']}",
+                "member_count": team["count"],
+            }
+        )
+
+    teams.sort(key=lambda item: item["team_number"])
+
+    if existing_results:
+        teams.sort(
+            key=lambda item: (
+                existing_results[item["team_number"]]["placement"]
+                if item["team_number"] in existing_results
+                else 9999,
+                item["team_number"],
+            )
+        )
+
+    rows = []
+    previous_placement = None
+    for team in teams:
+        saved = existing_results.get(team["team_number"])
+        discipline_points = []
+        team_point_map = points_by_team.get(team["team_number"], {})
+        total_points = 0
+        for discipline in disciplines:
+            entry = team_point_map.get(discipline["id"])
+            value = entry["points"] if entry else 0
+            total_points += value
+            discipline_points.append(
+                {
+                    "discipline_id": discipline["id"],
+                    "discipline_name": discipline["name"],
+                    "points": value,
+                }
+            )
+
+        rows.append(
+            {
+                "team_number": team["team_number"],
+                "team_name": team["team_name"],
+                "member_count": team["member_count"],
+                "placement": saved["placement"] if saved else "",
+                "image_path": saved["image_path"] if saved else "",
+                "discipline_points": discipline_points,
+                "total_points": total_points,
+            }
+        )
+    for row in rows:
+        row["is_tie_with_previous"] = previous_placement is not None and row["placement"] == previous_placement
+        previous_placement = row["placement"] if row["placement"] else None
+    return rows
+
+
+def build_event_results_public_rows(event_id):
+    points_by_team = get_event_result_points_by_team(event_id)
+    disciplines = get_event_fixed_disciplines(event_id)
+    rows = []
+    for row in get_event_results(event_id):
+        team_number = row["team_number"]
+        discipline_scores = []
+        team_total = 0
+        team_points = points_by_team.get(team_number, {})
+        for discipline in disciplines:
+            entry = team_points.get(discipline["id"])
+            value = entry["points"] if entry else 0
+            team_total += value
+            discipline_scores.append(
+                {
+                    "discipline_name": discipline["name"],
+                    "points": value,
+                }
+            )
+        members = get_team_members(event_id, team_number)
+        rows.append(
+            {
+                "team_number": team_number,
+                "team_name": get_team_display_name(event_id, team_number),
+                "placement": row["placement"],
+                "total_points": team_total,
+                "image_path": row["image_path"] or "",
+                "member_count": len(members),
+                "member_names": [member["participant_name"] for member in members],
+                "discipline_scores": discipline_scores,
+            }
+        )
+    previous = None
+    for row in rows:
+        row["is_tie"] = previous is not None and row["placement"] == previous
+        previous = row["placement"]
+    return rows
+
+
 def build_public_event_view(event_row):
     if not event_row:
         return None
     data = dict(event_row)
     data["description_html"] = format_event_description(event_row["description"])
+    data["results_rendered_html"] = format_event_description(event_row["results_html"])
+    data["team_results"] = build_event_results_public_rows(event_row["id"])
+    data["podium_results"] = [row for row in data["team_results"] if row["placement"] in (1, 2, 3)]
+    data["has_results"] = bool(data["team_results"])
+    data["results_pending_announcement"] = (
+        event_row["is_closed"] == 1
+        and datetime.now() >= parse_dt(event_row["event_at"])
+        and not data["has_results"]
+    )
+    data["fixed_disciplines"] = get_event_fixed_disciplines(event_row["id"])
+    data["extra_discipline_options"] = get_event_extra_discipline_options(event_row["id"])
     return data
 
 
@@ -1469,6 +2775,25 @@ def event_home(slug):
             event_row, my_status["registration"]["participant_name"]
         )
 
+    my_registration_id = my_status["registration"]["id"] if my_status else None
+    my_extra_vote = get_event_extra_vote(event_row["id"], my_registration_id)
+    extra_vote_summary = (
+        get_event_extra_vote_summary(event_row["id"])
+        if my_extra_vote
+        else None
+    )
+    can_vote_extra = bool(
+        my_status
+        and not event_has_started_or_closed(event_row)
+        and event_view["extra_discipline_options"]
+    )
+    can_choose_avatar = bool(
+        my_status
+        and my_status.get("team_number")
+        and not event_has_started_or_closed(event_row)
+    )
+    all_team_avatars = get_all_team_avatars()
+
     return render_template(
         "home.html",
         event=event_view,
@@ -1490,6 +2815,11 @@ def event_home(slug):
         payment_deadline_display=payment_deadline_display,
         payment_details=payment_details,
         my_payment_details=my_payment_details,
+        my_extra_vote=my_extra_vote,
+        extra_vote_summary=extra_vote_summary,
+        can_vote_extra=can_vote_extra,
+        can_choose_avatar=can_choose_avatar,
+        all_team_avatars=all_team_avatars,
     )
 
 
@@ -1504,6 +2834,7 @@ def register_email(slug):
     email = request.form.get("email", "").strip()
     payment_method = request.form.get("payment_method", "").strip()
     team_name_idea = request.form.get("team_name_idea", "").strip()
+    team_avatar_idea_id = parse_avatar_id(request.form.get("team_avatar_idea_id"))
 
     if not name or not email:
         flash("A név és az email megadása kötelező.", "error")
@@ -1527,6 +2858,7 @@ def register_email(slug):
             provider="email",
             payment_method=payment_method,
             team_name_idea=team_name_idea,
+            team_avatar_idea_id=team_avatar_idea_id,
         )
         set_session_registration_id(event_row["id"], registration_id)
         flash("Sikeres jelentkezés.", "success")
@@ -1558,6 +2890,7 @@ def google_login(slug):
         session[f"payment_method_{event_row['id']}"] = payment_method
 
     session[f"team_name_idea_{event_row['id']}"] = request.args.get("team_name_idea", "").strip()
+    session[f"team_avatar_idea_{event_row['id']}"] = request.args.get("team_avatar_idea_id", "").strip()
 
     redirect_uri = url_for("google_callback", slug=slug, _external=True)
     return oauth.google.authorize_redirect(redirect_uri)
@@ -1601,6 +2934,7 @@ def google_callback(slug):
 
     payment_method = session.pop(f"payment_method_{event_row['id']}", None)
     team_name_idea = session.pop(f"team_name_idea_{event_row['id']}", "")
+    team_avatar_idea_id = parse_avatar_id(session.pop(f"team_avatar_idea_{event_row['id']}", ""))
 
     try:
         registration_id = register_participant(
@@ -1611,6 +2945,7 @@ def google_callback(slug):
             google_sub=google_sub,
             payment_method=payment_method,
             team_name_idea=team_name_idea,
+            team_avatar_idea_id=team_avatar_idea_id,
         )
         set_session_registration_id(event_row["id"], registration_id)
         flash("Sikeres Google-jelentkezés.", "success")
@@ -1655,6 +2990,100 @@ def propose_team_name(slug):
         flash(str(e), "error")
         return redirect(url_for("event_home", slug=slug))
     flash("A csapatnév-javaslat rögzítve lett.", "success")
+    return redirect(url_for("event_home", slug=slug))
+
+
+@app.route("/e/<slug>/team-avatar", methods=["POST"])
+def choose_avatar(slug):
+    event_row = get_event_by_slug(slug)
+    if not event_row:
+        flash("Az esemény nem található.", "error")
+        return redirect(url_for("home"))
+
+    finalize_event_if_needed(event_row)
+    event_row = get_event(event_row["id"])
+    if event_has_started_or_closed(event_row):
+        flash("Az avatár már nem módosítható.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    registration_id = get_session_registration_id(event_row["id"])
+    if not registration_id:
+        flash("Ehhez előbb jelentkezned kell.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    reg = get_registration_by_id(registration_id)
+    if not reg or reg["event_id"] != event_row["id"] or reg["assigned_team"] is None:
+        flash("Avatárt csak csapatban lévő játékos választhat.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    avatar_id = request.form.get("avatar_id", type=int)
+    if not avatar_id:
+        flash("Válassz egy avatárt.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    try:
+        choose_team_avatar(event_row["id"], reg["assigned_team"], avatar_id, registration_id)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    flash("A csapat avatárját mentettük.", "success")
+    return redirect(url_for("event_home", slug=slug))
+
+
+@app.route("/e/<slug>/extra-discipline-vote", methods=["POST"])
+def vote_extra_discipline(slug):
+    event_row = get_event_by_slug(slug)
+    if not event_row:
+        flash("Az esemény nem található.", "error")
+        return redirect(url_for("home"))
+
+    finalize_event_if_needed(event_row)
+    event_row = get_event(event_row["id"])
+    if event_has_started_or_closed(event_row):
+        flash("A szavazás lezárult.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    registration_id = get_session_registration_id(event_row["id"])
+    if not registration_id:
+        flash("A szavazáshoz előbb jelentkezz erre az eseményre.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    reg = get_registration_by_id(registration_id)
+    if not reg or reg["event_id"] != event_row["id"] or reg["is_deleted"] == 1:
+        flash("A szavazáshoz érvényes jelentkezés szükséges.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    discipline_id = request.form.get("discipline_id", type=int)
+    if not discipline_id:
+        flash("Válassz egy extra versenyszámot.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    option = query_one(
+        """
+        SELECT ed.id
+        FROM event_disciplines ed
+        WHERE ed.event_id = ?
+          AND ed.discipline_id = ?
+          AND ed.role = 'extra'
+        LIMIT 1
+        """,
+        (event_row["id"], discipline_id),
+    )
+    if not option:
+        flash("Érvénytelen extra versenyszám.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    execute(
+        """
+        INSERT INTO event_extra_votes (event_id, registration_id, discipline_id, created_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(event_id, registration_id)
+        DO UPDATE SET discipline_id = excluded.discipline_id, created_at = excluded.created_at
+        """,
+        (event_row["id"], registration_id, discipline_id, now_str()),
+    )
+    flash("Az extra versenyszám szavazatodat rögzítettük.", "success")
     return redirect(url_for("event_home", slug=slug))
 
 
@@ -1731,9 +3160,11 @@ def admin_dashboard():
     for event in get_all_events():
         finalize_event_if_needed(event)
         current_event = get_event(event["id"])
+        event_view = build_public_event_view(current_event)
         event_cards.append(
             {
                 "event": current_event,
+                "event_view": event_view,
                 "stats": build_event_stats(current_event["id"]),
             }
         )
@@ -1744,6 +3175,82 @@ def admin_dashboard():
         format_dt_display=format_dt_display,
         payment_label=payment_label,
     )
+
+
+@app.route("/admin/avatars")
+@admin_required
+def admin_avatars():
+    return render_template(
+        "admin_avatars.html",
+        team_avatars=get_all_team_avatars(),
+    )
+
+
+@app.route("/admin/avatars/upload", methods=["POST"])
+@admin_required
+def admin_upload_avatar():
+    avatar_file = request.files.get("avatar_file")
+    avatar_name = request.form.get("avatar_name", "").strip()
+
+    if not avatar_name:
+        avatar_name = f"Egyedi avatar {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+
+    try:
+        image_path = save_uploaded_team_avatar_image(avatar_file)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin_dashboard"))
+
+    code = f"user-{uuid.uuid4().hex[:12]}"
+    execute(
+        """
+        INSERT INTO team_avatars (code, name, image_path, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (code, avatar_name, image_path, now_str()),
+    )
+    flash("Az új avatár feltöltve.", "success")
+    return redirect(url_for("admin_avatars"))
+
+
+@app.route("/admin/avatars/<int:avatar_id>/delete", methods=["POST"])
+@admin_required
+def admin_delete_avatar(avatar_id):
+    avatar = query_one("SELECT id, image_path FROM team_avatars WHERE id = ?", (avatar_id,))
+    if not avatar:
+        flash("Az avatár nem található.", "error")
+        return redirect(url_for("admin_avatars"))
+
+    execute(
+        "UPDATE registrations SET pending_team_avatar_idea = NULL WHERE pending_team_avatar_idea = ?",
+        (avatar_id,),
+    )
+    execute("DELETE FROM team_avatar_selections WHERE avatar_id = ?", (avatar_id,))
+    execute("DELETE FROM team_avatars WHERE id = ?", (avatar_id,))
+
+    image_path = (avatar["image_path"] or "").strip()
+    prefixes = [
+        "/static/team_avatars/custom/",
+        f"/static/{PERSIST_SUBDIR}/team_avatars/custom/",
+    ]
+    for prefix in prefixes:
+        if not image_path.startswith(prefix):
+            continue
+        filename = image_path[len(prefix) :]
+        candidate_paths = [
+            os.path.join(TEAM_AVATAR_UPLOAD_DIR, filename),
+            os.path.join(BASE_DIR, "static", "team_avatars", "custom", filename),
+        ]
+        for abs_path in candidate_paths:
+            if os.path.isfile(abs_path):
+                try:
+                    os.remove(abs_path)
+                except OSError:
+                    pass
+        break
+
+    flash("Az avatár törölve.", "success")
+    return redirect(url_for("admin_avatars"))
 
 
 @app.route("/admin/events/<int:event_id>")
@@ -1766,6 +3273,166 @@ def admin_event_dashboard(event_id):
         payment_label=payment_label,
     )
 
+
+@app.route("/admin/events/<int:event_id>/results", methods=["GET", "POST"])
+@admin_required
+def admin_event_results(event_id):
+    event_row = get_event(event_id)
+    if not event_row:
+        flash("Az esemény nem található.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    finalize_event_if_needed(event_row)
+    event_row = get_event(event_id)
+
+    if event_row["is_closed"] == 0:
+        flash("Eredményhirdetést csak lezárt eseménynél lehet rögzíteni.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    if datetime.now() < parse_dt(event_row["event_at"]):
+        flash("Eredményhirdetés csak az esemény kezdési időpontja után érhető el.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    if request.method == "GET":
+        return render_template(
+            "admin_event_results.html",
+            event=event_row,
+            result_rows=build_event_results_editor_rows(event_id),
+            disciplines=get_event_fixed_disciplines(event_id),
+            format_dt_display=format_dt_display,
+        )
+
+    disciplines = get_event_fixed_disciplines(event_id)
+    if not disciplines:
+        flash("Nincs fix versenyszám, ezért nem lehet eredményt rögzíteni.", "error")
+        return redirect(url_for("admin_event_results", event_id=event_id))
+
+    team_numbers_raw = request.form.getlist("result_team_number")
+    existing_images_raw = request.form.getlist("result_existing_image_path")
+
+    if not team_numbers_raw:
+        flash("Nincs csapat, amelyhez eredményt lehetne rögzíteni.", "error")
+        return redirect(url_for("admin_event_results", event_id=event_id))
+    if len(team_numbers_raw) != len(existing_images_raw):
+        flash("Hibás eredmény űrlap adatok érkeztek.", "error")
+        return redirect(url_for("admin_event_results", event_id=event_id))
+
+    rows_for_ranking = []
+
+    for idx, team_value in enumerate(team_numbers_raw):
+        team_number = team_value
+        existing_image_path = (existing_images_raw[idx] if idx < len(existing_images_raw) else "").strip()
+
+        try:
+            team_number_int = int(team_number)
+        except (TypeError, ValueError):
+            flash("Érvénytelen csapat az eredménylistában.", "error")
+            return redirect(url_for("admin_event_results", event_id=event_id))
+
+        if len(get_team_members(event_id, team_number_int)) == 0:
+            flash(f"A(z) {team_number_int}. csapatnak nincs aktív tagja.", "error")
+            return redirect(url_for("admin_event_results", event_id=event_id))
+
+        image_path = existing_image_path
+        uploaded_image = request.files.get(f"result_image_{team_number_int}")
+        if uploaded_image and getattr(uploaded_image, "filename", ""):
+            try:
+                image_path = save_uploaded_event_result_image(uploaded_image)
+            except ValueError as exc:
+                flash(str(exc), "error")
+                return redirect(url_for("admin_event_results", event_id=event_id))
+
+        discipline_points = []
+        total_points = 0
+        for discipline in disciplines:
+            raw_points = (request.form.get(f"points_{team_number_int}_{discipline['id']}") or "").strip()
+            if raw_points == "":
+                flash(f"A(z) {get_team_display_name(event_id, team_number_int)} csapatnál minden versenyszám pontja kötelező.", "error")
+                return redirect(url_for("admin_event_results", event_id=event_id))
+            try:
+                points = int(raw_points)
+            except ValueError:
+                flash(f"A(z) {discipline['name']} pontszáma csak egész szám lehet.", "error")
+                return redirect(url_for("admin_event_results", event_id=event_id))
+            if points < 0:
+                flash("A pontszám nem lehet negatív.", "error")
+                return redirect(url_for("admin_event_results", event_id=event_id))
+            total_points += points
+            discipline_points.append(
+                {
+                    "discipline_id": discipline["id"],
+                    "points": points,
+                }
+            )
+
+        rows_for_ranking.append(
+            {
+                "team_number": team_number_int,
+                "total_points": total_points,
+                "discipline_points": discipline_points,
+                "image_path": image_path,
+            }
+        )
+
+    rows_for_ranking.sort(key=lambda row: (-row["total_points"], row["team_number"]))
+    previous_total = None
+    previous_placement = None
+    for index, row in enumerate(rows_for_ranking, start=1):
+        if previous_total is not None and row["total_points"] == previous_total:
+            row["placement"] = previous_placement
+        else:
+            row["placement"] = index
+            previous_placement = index
+        previous_total = row["total_points"]
+
+    execute("DELETE FROM event_results WHERE event_id = ?", (event_id,))
+    execute("DELETE FROM event_result_points WHERE event_id = ?", (event_id,))
+
+    for row in rows_for_ranking:
+        execute(
+            """
+            INSERT INTO event_results (
+                event_id, team_number, placement, points, note, image_path, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                row["team_number"],
+                row["placement"],
+                str(row["total_points"]),
+                "",
+                row["image_path"],
+                now_str(),
+                now_str(),
+            ),
+        )
+        for point_row in row["discipline_points"]:
+            execute(
+                """
+                INSERT INTO event_result_points (
+                    event_id, team_number, discipline_id, points, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    row["team_number"],
+                    point_row["discipline_id"],
+                    point_row["points"],
+                    now_str(),
+                    now_str(),
+                ),
+            )
+
+    execute(
+        "UPDATE events SET results_published_at = COALESCE(results_published_at, ?) WHERE id = ?",
+        (now_str(), event_id),
+    )
+
+    flash("Az eredményhirdetés mentve. A dobogósok kiemelve látszanak a publikus oldalon.", "success")
+    return redirect(url_for("admin_event_results", event_id=event_id))
+
 @app.route("/admin/events/new", methods=["GET", "POST"])
 @admin_required
 def admin_new_event():
@@ -1787,6 +3454,18 @@ def admin_new_event():
             event_at = parse_dt_input(event_date, event_time)
         except ValueError:
             flash("Érvénytelen dátum vagy idő.", "error")
+            return redirect(url_for("admin_new_event"))
+
+        try:
+            apply_discipline_updates_from_form()
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("admin_new_event"))
+
+        try:
+            fixed_ids, extra_ids = resolve_event_discipline_selection()
+        except ValueError as exc:
+            flash(str(exc), "error")
             return redirect(url_for("admin_new_event"))
 
         deadline = compute_deadline(event_at)
@@ -1813,9 +3492,10 @@ def admin_new_event():
                 bank_account if has_fee else "",
             ),
         )
+        save_event_discipline_links(cur.lastrowid, fixed_ids, extra_ids)
         flash("Az esemény létrejött.", "success")
         return redirect(url_for("admin_event_dashboard", event_id=cur.lastrowid))
-    return render_template("admin_event_form.html", mode="create", event=None)
+    return render_template("admin_event_form.html", **build_admin_event_form_context())
 
 
 @app.route("/admin/events/<int:event_id>/edit", methods=["GET", "POST"])
@@ -1842,6 +3522,18 @@ def admin_edit_event(event_id):
             flash("Érvénytelen dátum vagy idő.", "error")
             return redirect(url_for("admin_edit_event", event_id=event_id))
 
+        try:
+            apply_discipline_updates_from_form()
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("admin_edit_event", event_id=event_id))
+
+        try:
+            fixed_ids, extra_ids = resolve_event_discipline_selection()
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("admin_edit_event", event_id=event_id))
+
         deadline = compute_deadline(event_at)
         slug = event_row["slug"] or generate_unique_slug(title, event_at.strftime("%Y-%m-%d"))
 
@@ -1865,9 +3557,10 @@ def admin_edit_event(event_id):
                 event_id,
             ),
         )
+        save_event_discipline_links(event_id, fixed_ids, extra_ids)
         flash("Az esemény frissítve.", "success")
         return redirect(url_for("admin_event_dashboard", event_id=event_id))
-    return render_template("admin_event_form.html", mode="edit", event=build_public_event_view(event_row))
+    return render_template("admin_event_form.html", **build_admin_event_form_context(event_row))
 
 
 @app.route("/admin/events/<int:event_id>/delete", methods=["GET", "POST"])
@@ -1953,10 +3646,85 @@ def admin_teams(event_id):
         event=event_row,
         teams=teams,
         unassigned=unassigned,
+        max_teams=MAX_TEAMS,
         format_dt_display=format_dt_display,
         payment_label=payment_label,
         payment_method_label=payment_method_label,
     )
+
+
+@app.route("/admin/events/<int:event_id>/players/add", methods=["POST"])
+@admin_required
+def admin_add_player(event_id):
+    event_row = get_event(event_id)
+    if not event_row:
+        flash("Az esemény nem található.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    finalize_event_if_needed(event_row)
+    event_row = get_event(event_id)
+    if event_has_started_or_closed(event_row):
+        flash("Lezárt eseményhez már nem adhatsz hozzá új játékost.", "error")
+        return redirect(url_for("admin_teams", event_id=event_id))
+
+    name = (request.form.get("participant_name") or "").strip()
+    email = (request.form.get("participant_email") or "").strip()
+    team_number = request.form.get("team_number", type=int)
+    payment_method = request.form.get("payment_method", PAYMENT_METHOD_CASH)
+
+    if not name:
+        flash("Adj meg játékosnevet.", "error")
+        return redirect(url_for("admin_teams", event_id=event_id))
+    if not email or "@" not in email:
+        flash("Adj meg érvényes email címet.", "error")
+        return redirect(url_for("admin_teams", event_id=event_id))
+    if team_number is None or team_number < 1 or team_number > MAX_TEAMS:
+        flash("Válassz érvényes csapatot.", "error")
+        return redirect(url_for("admin_teams", event_id=event_id))
+    if get_registration_by_email(event_id, email):
+        flash("Erre az email címre már van jelentkezés ezen az eseményen.", "error")
+        return redirect(url_for("admin_teams", event_id=event_id))
+    if event_row["has_fee"] == 1 and payment_method not in (PAYMENT_METHOD_TRANSFER, PAYMENT_METHOD_CASH):
+        flash("Fizetős eseménynél a fizetési mód csak utalás vagy készpénz lehet.", "error")
+        return redirect(url_for("admin_teams", event_id=event_id))
+
+    try:
+        registration_id = register_participant(
+            event_id,
+            name,
+            email,
+            provider="manual",
+            payment_method=payment_method if event_row["has_fee"] == 1 else PAYMENT_METHOD_NONE,
+        )
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin_teams", event_id=event_id))
+
+    reg = get_registration_by_id(registration_id)
+    if not reg:
+        flash("A játékost nem sikerült létrehozni.", "error")
+        return redirect(url_for("admin_teams", event_id=event_id))
+
+    if get_current_team_size(event_id, team_number) >= MAX_TEAM_SIZE and reg["assigned_team"] != team_number:
+        execute("UPDATE registrations SET is_manual = 1 WHERE id = ?", (registration_id,))
+        flash("A játékos hozzáadva, de a kiválasztott csapat tele van (max 4 fő).", "info")
+        return redirect(url_for("admin_teams", event_id=event_id))
+
+    slot = get_current_team_size(event_id, team_number) + 1
+    execute(
+        """
+        UPDATE registrations
+        SET assigned_team = ?, assigned_stage = ?, assigned_slot = ?,
+            pending_stage = NULL, pending_position = NULL,
+            removed_from_team = 0, is_manual = 1
+        WHERE id = ?
+        """,
+        (team_number, max(2, slot), slot, registration_id),
+    )
+    activate_stored_team_name_idea(registration_id)
+    activate_stored_team_avatar_idea(registration_id)
+    flash("Új játékos hozzáadva a csapathoz.", "success")
+    return redirect(url_for("admin_teams", event_id=event_id))
 
 
 @app.route("/admin/player/<int:registration_id>/remove-from-team", methods=["POST"])
@@ -2049,6 +3817,7 @@ def admin_move_player(registration_id):
         (team_number, max(2, slot), slot, registration_id),
     )
     activate_stored_team_name_idea(registration_id)
+    activate_stored_team_avatar_idea(registration_id)
     flash("A játékos áthelyezve.", "success")
     return redirect(url_for("admin_teams", event_id=event_id))
 

@@ -38,6 +38,8 @@
     .member.empty, .small, p { color:var(--muted); }
     .team-card { padding:18px; background:#eff6ff; border-color:#bfdbfe; }
     .team-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:12px; padding:14px; border-radius:18px; background:linear-gradient(135deg, #f8fbff 0%, #fffaf0 100%); border:1px solid #e6eef8; }
+    .team-avatar { width:56px; height:56px; border-radius:14px; object-fit:cover; border:1px solid #bfdbfe; background:#eff6ff; }
+    .team-avatar.big { width:72px; height:72px; border-radius:16px; }
     .team-name { margin:0; font-size:26px; line-height:1; letter-spacing:-0.03em; }
     .team-meta-panel { margin-bottom:12px; padding:12px 14px; border-radius:16px; background:#edf4fb; border:1px solid #d6e4f5; box-shadow:inset 0 1px 0 rgba(255,255,255,.65); }
     .team-meta { display:flex; flex-wrap:wrap; gap:8px 14px; font-size:14px; color:var(--muted); }
@@ -75,6 +77,46 @@
     .copy-value { font-family:Consolas, Monaco, monospace; word-break:break-word; color:var(--text); margin-bottom:8px; }
     .copy-btn { background:#fff; color:var(--text); border:1px solid var(--line); }
     .copy-btn.copied { background:var(--ok-bg); color:var(--ok-text); border-color:transparent; }
+    .discipline-board { margin:14px 0 18px; padding:16px; border:1px solid #dbeafe; border-radius:18px; background:linear-gradient(135deg, #f8fbff, #ffffff); }
+    .results-board { margin:14px 0 18px; padding:16px; border:1px solid #c7d2fe; border-radius:18px; background:linear-gradient(135deg, #eef2ff, #ffffff); }
+    .results-board h3 { margin:0 0 10px; }
+    .result-image { width:100%; max-width:320px; border-radius:10px; border:1px solid #dbe7f4; object-fit:cover; aspect-ratio:4/3; margin-top:8px; background:#f8fafc; }
+    .results-table { margin-top:12px; border:1px solid #dbe7f4; border-radius:12px; overflow:hidden; background:#fff; }
+    .results-row { display:grid; grid-template-columns:70px 1fr 140px; gap:10px; padding:12px; border-bottom:1px solid #e2e8f0; align-items:start; }
+    .results-row:last-child { border-bottom:0; }
+    .results-row.place-1 { background:linear-gradient(135deg, #fff7d6, #fffef7); border-left:4px solid #d4a017; }
+    .results-row.place-2 { background:linear-gradient(135deg, #f2f4f8, #ffffff); border-left:4px solid #9ca3af; }
+    .results-row.place-3 { background:linear-gradient(135deg, #fce9da, #fffaf5); border-left:4px solid #b5651d; }
+    .results-points { font-weight:700; text-align:right; }
+    .result-members { margin-top:6px; font-size:13px; color:var(--muted); }
+    .discipline-score-list { margin-top:8px; display:grid; gap:6px; }
+    .discipline-score-item { display:flex; justify-content:space-between; gap:10px; font-size:13px; color:var(--text); border:1px solid #e2e8f0; background:#f8fafc; border-radius:10px; padding:6px 8px; }
+    .results-total-label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+    .discipline-board h3 { margin:0 0 10px; }
+    .discipline-list-public { display:grid; gap:10px; margin-bottom:10px; }
+    .discipline-item-public { border:1px solid #dbe7f4; background:#fff; border-radius:14px; padding:10px 12px; }
+    .discipline-item-public p { margin:6px 0 0; font-size:14px; color:var(--muted); }
+    .discipline-media { margin-top:10px; border-radius:12px; overflow:hidden; border:1px solid #dbe7f4; background:#f8fafc; }
+    .discipline-media img { width:100%; max-height:220px; object-fit:cover; display:block; }
+    .discipline-media iframe { width:100%; aspect-ratio:16 / 9; border:0; display:block; }
+    .vote-summary-list { display:grid; gap:8px; margin-top:10px; }
+    .vote-summary-row { display:flex; justify-content:space-between; gap:12px; border:1px solid #dbe7f4; border-radius:12px; padding:8px 10px; background:#fff; }
+    .avatar-select-help { margin-top:6px; font-size:12px; color:var(--muted); }
+    .avatar-dropdown { position:relative; }
+    .avatar-dropdown > summary { list-style:none; }
+    .avatar-dropdown > summary::-webkit-details-marker { display:none; }
+    .avatar-dropdown-toggle { width:100%; display:flex; justify-content:space-between; align-items:center; gap:10px; border:1px solid #cbd5e1; border-radius:14px; padding:10px 12px; background:#fff; cursor:pointer; }
+    .avatar-dropdown[open] .avatar-dropdown-toggle { border-color:#93c5fd; box-shadow:0 0 0 3px rgba(59,130,246,.12); }
+    .avatar-dropdown-value { min-width:0; display:flex; align-items:center; gap:10px; }
+    .avatar-dropdown-preview { width:28px; height:28px; border-radius:8px; object-fit:cover; border:1px solid #dbe7f4; background:#f1f5f9; flex-shrink:0; }
+    .avatar-dropdown-label { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text); font-size:14px; }
+    .avatar-dropdown-caret { color:#64748b; font-size:12px; flex-shrink:0; }
+    .avatar-dropdown-menu { margin-top:8px; border:1px solid #dbe7f4; border-radius:14px; background:#fff; max-height:240px; overflow-y:auto; padding:6px; box-shadow:0 10px 24px rgba(15,23,42,.10); }
+    .avatar-option { width:100%; border:0; background:transparent; padding:8px; border-radius:10px; display:flex; align-items:center; gap:10px; text-align:left; cursor:pointer; }
+    .avatar-option:hover { background:#f8fafc; }
+    .avatar-option.selected { background:#eff6ff; outline:1px solid #bfdbfe; }
+    .avatar-option img { width:32px; height:32px; border-radius:9px; object-fit:cover; border:1px solid #dbe7f4; background:#f1f5f9; flex-shrink:0; }
+    .avatar-option span { color:var(--text); font-size:14px; }
     .rich-text p { margin:0 0 14px; color:var(--muted); line-height:1.55; }
     .rich-text ul, .rich-text ol { margin:0 0 14px 20px; color:var(--muted); line-height:1.55; }
     .rich-text blockquote { margin:0 0 14px; padding-left:12px; border-left:3px solid #bfdbfe; color:var(--muted); }
@@ -87,7 +129,12 @@
     h3 { margin:0 0 10px; font-size:18px; }
     p { margin:0 0 14px; line-height:1.55; }
     .section-title { margin-bottom:14px; display:flex; justify-content:space-between; align-items:end; gap:16px; }
-    @media (max-width:980px) { .hero-grid, .grid-2, .stats, .teams-grid, .mini-grid { grid-template-columns:1fr; } h1 { font-size:34px; } }
+    @media (max-width:980px) {
+      .hero-grid, .grid-2, .stats, .teams-grid, .mini-grid { grid-template-columns:1fr; }
+      .results-row { grid-template-columns:60px 1fr; }
+      .results-points { grid-column:2; text-align:left; }
+      h1 { font-size:34px; }
+    }
   </style>
 </head>
 <body>
@@ -100,19 +147,96 @@
           <a href="{{ url_for('admin_login') }}" class="btn btn-secondary">Szervezői belépés</a>
         </div>
       </div>
-      <div class="hero-grid">
+      {% set results_only_mode = event["is_closed"] == 1 and event["has_results"] %}
+      <div class="hero-grid"{% if results_only_mode %} style="grid-template-columns:1fr;"{% endif %}>
         <div>
-          <span class="badge">{{ event["title"] }}</span>
-          <h1>Csocsó. Darts.<br>Egy nevezés, automatikus csapatbeosztás.</h1>
-          {% if event["description_html"] %}<div class="rich-text">{{ event["description_html"] }}</div>{% endif %}
-          <p>A játék minimum <strong>3 csapattal, azaz 6 fővel</strong> indul. Maximum <strong>5 csapat</strong> vehet részt, összesen legfeljebb <strong>20 fő</strong>. A jelentkezés az esemény előtt <strong>6 órával</strong> zár.</p>
-          <p>Az első 10 jelentkezőből alakul ki az 5 db 2 fős csapat. A további jelentkezők véletlenszerűen bővítik a meglévő csapatokat 3, majd 4 főig.</p>
-          <div class="stats">
-            <div class="stat"><div class="small">Esemény ideje</div><div><strong>{{ format_dt_display(event["event_at"]) }}</strong></div></div>
-            <div class="stat"><div class="small">Határidő</div><div><strong>{{ format_dt_display(event["registration_deadline"]) }}</strong></div></div>
-            <div class="stat"><div class="small">Jelentkezők</div><div><strong>{{ active_count }}/{{ max_players }}</strong></div></div>
-          </div>
+          {% if results_only_mode %}
+            <div class="results-board">
+              <h3>Hivatalos eredmények</h3>
+              {% if event["results_rendered_html"] %}<div class="rich-text">{{ event["results_rendered_html"] }}</div>{% endif %}
+              {% if event["team_results"] %}
+                <div class="results-table">
+                  {% for row in event["team_results"] %}
+                    <div class="results-row {% if row['placement'] in (1, 2, 3) %}place-{{ row['placement'] }}{% endif %}">
+                      <div><strong>{{ row["placement"] }}.</strong></div>
+                      <div>
+                        <div><strong>{{ row["team_name"] }}</strong>{% if row["is_tie"] %} <span class="small">(döntetlen)</span>{% endif %}</div>
+                        {% if row["member_names"] %}
+                          <div class="result-members">Csapattagok: {{ row["member_names"] | join(", ") }}</div>
+                        {% endif %}
+                        {% if row["discipline_scores"] %}
+                          <div class="discipline-score-list">
+                            {% for score in row["discipline_scores"] %}
+                              <div class="discipline-score-item">
+                                <span>{{ score["discipline_name"] }}</span>
+                                <strong>{{ score["points"] }} pont</strong>
+                              </div>
+                            {% endfor %}
+                          </div>
+                        {% endif %}
+                        {% if row["image_path"] %}<img class="result-image" src="{{ row['image_path'] }}" alt="{{ row['team_name'] }}">{% endif %}
+                      </div>
+                      <div class="results-points"><span class="results-total-label">Összpont</span>{{ row["total_points"] }}</div>
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          {% else %}
+            <span class="badge">{{ event["title"] }}</span>
+            <h1>Egy nevezés, automatikus csapatbeosztás.</h1>
+            {% if event["description_html"] %}<div class="rich-text">{{ event["description_html"] }}</div>{% endif %}
+            {% if event["fixed_disciplines"] %}
+              <div class="discipline-board">
+                <h3>Fix versenyszámok</h3>
+                <div class="discipline-list-public">
+                  {% for discipline in event["fixed_disciplines"] %}
+                    <div class="discipline-item-public">
+                      <strong>{{ discipline["name"] }}</strong>
+                      <p>{{ discipline["description"] }}</p>
+                      {% if discipline["image_path"] %}
+                        <div class="discipline-media"><img src="{{ discipline['image_path'] }}" alt="{{ discipline['name'] }}"></div>
+                      {% endif %}
+                      {% if discipline["youtube_embed_url"] %}
+                        <div class="discipline-media">
+                          <iframe src="{{ discipline['youtube_embed_url'] }}" title="{{ discipline['name'] }} videó" loading="lazy" allowfullscreen></iframe>
+                        </div>
+                      {% endif %}
+                    </div>
+                  {% endfor %}
+                </div>
+                {% if event["extra_discipline_options"] %}
+                  <h3 style="margin-top:12px;">Extra versenyszám szavazás</h3>
+                  <p class="small">Az alábbi opciókból a versenyzők szavaznak majd 1 extra versenyszámra.</p>
+                  <div class="discipline-list-public">
+                    {% for discipline in event["extra_discipline_options"] %}
+                      <div class="discipline-item-public">
+                        <strong>{{ discipline["name"] }}</strong>
+                        <p>{{ discipline["description"] }}</p>
+                        {% if discipline["image_path"] %}
+                          <div class="discipline-media"><img src="{{ discipline['image_path'] }}" alt="{{ discipline['name'] }}"></div>
+                        {% endif %}
+                        {% if discipline["youtube_embed_url"] %}
+                          <div class="discipline-media">
+                            <iframe src="{{ discipline['youtube_embed_url'] }}" title="{{ discipline['name'] }} videó" loading="lazy" allowfullscreen></iframe>
+                          </div>
+                        {% endif %}
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            {% endif %}
+            <p>A játék minimum <strong>3 csapattal, azaz 6 fővel</strong> indul. Maximum <strong>5 csapat</strong> vehet részt, összesen legfeljebb <strong>20 fő</strong>. A jelentkezés az esemény előtt <strong>6 órával</strong> zár.</p>
+            <p>Az első 10 jelentkezőből alakul ki az 5 db 2 fős csapat. A további jelentkezők véletlenszerűen bővítik a meglévő csapatokat 3, majd 4 főig.</p>
+            <div class="stats">
+              <div class="stat"><div class="small">Esemény ideje</div><div><strong>{{ format_dt_display(event["event_at"]) }}</strong></div></div>
+              <div class="stat"><div class="small">Határidő</div><div><strong>{{ format_dt_display(event["registration_deadline"]) }}</strong></div></div>
+              <div class="stat"><div class="small">Jelentkezők</div><div><strong>{{ active_count }}/{{ max_players }}</strong></div></div>
+            </div>
+          {% endif %}
         </div>
+        {% if not results_only_mode %}
         <div class="card">
           <h2>Gyors jelentkezés</h2>
           {% with messages = get_flashed_messages(with_categories=true) %}
@@ -153,6 +277,34 @@
               <div class="field"><label for="name">Név</label><input id="name" name="name" type="text" placeholder="Teljes név" required></div>
               <div class="field"><label for="email">Email cím</label><input id="email" name="email" type="email" placeholder="email@pelda.hu" required></div>
               <div class="field"><label for="team_name_idea">Első csapatnév-ötlet (opcionális)</label><input id="team_name_idea" name="team_name_idea" type="text" placeholder="Pl. Villámkiflik"></div>
+              {% if all_team_avatars %}
+                <div class="field">
+                  <label for="team_avatar_idea_id">Csapat avatár-ötlet (opcionális)</label>
+                  <input type="hidden" id="team_avatar_idea_id" name="team_avatar_idea_id" value="">
+                  <details class="avatar-dropdown" data-avatar-dropdown data-input-id="team_avatar_idea_id">
+                    <summary class="avatar-dropdown-toggle">
+                      <span class="avatar-dropdown-value">
+                        <img class="avatar-dropdown-preview" data-avatar-preview hidden>
+                        <span class="avatar-dropdown-label" data-avatar-label>Nem választok most</span>
+                      </span>
+                      <span class="avatar-dropdown-caret">▼</span>
+                    </summary>
+                    <div class="avatar-dropdown-menu">
+                      <button type="button" class="avatar-option" data-avatar-option data-value="" data-label="Nem választok most" data-image="">
+                        <img src="/static/team_avatars/avatar-01.svg" alt="">
+                        <span>Nem választok most</span>
+                      </button>
+                      {% for avatar in all_team_avatars %}
+                        <button type="button" class="avatar-option" data-avatar-option data-value="{{ avatar['id'] }}" data-label="{{ avatar['name'] }}" data-image="{{ avatar['image_path'] }}">
+                          <img src="{{ avatar['image_path'] }}" alt="{{ avatar['name'] }}">
+                          <span>{{ avatar['name'] }}</span>
+                        </button>
+                      {% endfor %}
+                    </div>
+                  </details>
+                  <div class="avatar-select-help">Később is módosítható a csapat státusz résznél.</div>
+                </div>
+              {% endif %}
               {% if event["has_fee"] == 1 %}
                 <div class="field">
                   <label for="payment_method">Fizetési mód</label>
@@ -171,6 +323,33 @@
                   <label for="team_name_idea_google">Első csapatnév-ötlet Google jelentkezéshez (opcionális)</label>
                   <input id="team_name_idea_google" name="team_name_idea" type="text" placeholder="Pl. Villámkiflik">
                 </div>
+                {% if all_team_avatars %}
+                  <div class="field">
+                    <label for="team_avatar_idea_id_google">Csapat avatár-ötlet Google jelentkezéshez (opcionális)</label>
+                    <input type="hidden" id="team_avatar_idea_id_google" name="team_avatar_idea_id" value="">
+                    <details class="avatar-dropdown" data-avatar-dropdown data-input-id="team_avatar_idea_id_google">
+                      <summary class="avatar-dropdown-toggle">
+                        <span class="avatar-dropdown-value">
+                          <img class="avatar-dropdown-preview" data-avatar-preview hidden>
+                          <span class="avatar-dropdown-label" data-avatar-label>Nem választok most</span>
+                        </span>
+                        <span class="avatar-dropdown-caret">▼</span>
+                      </summary>
+                      <div class="avatar-dropdown-menu">
+                        <button type="button" class="avatar-option" data-avatar-option data-value="" data-label="Nem választok most" data-image="">
+                          <img src="/static/team_avatars/avatar-01.svg" alt="">
+                          <span>Nem választok most</span>
+                        </button>
+                        {% for avatar in all_team_avatars %}
+                          <button type="button" class="avatar-option" data-avatar-option data-value="{{ avatar['id'] }}" data-label="{{ avatar['name'] }}" data-image="{{ avatar['image_path'] }}">
+                            <img src="{{ avatar['image_path'] }}" alt="{{ avatar['name'] }}">
+                            <span>{{ avatar['name'] }}</span>
+                          </button>
+                        {% endfor %}
+                      </div>
+                    </details>
+                  </div>
+                {% endif %}
                 {% if event["has_fee"] == 1 %}
                   <div class="field">
                     <label for="payment_method_google">Fizetési mód Google jelentkezéshez</label>
@@ -191,10 +370,12 @@
             <div class="mini-box"><div class="small">4. körös pool</div><div><strong>{{ stage4_pending_count }}/5</strong></div></div>
           </div>
         </div>
+        {% endif %}
       </div>
     </div>
   </div>
 
+  {% if not results_only_mode %}
   <div class="container">
     <div class="grid-2">
       <div class="card">
@@ -217,6 +398,9 @@
                     {% endif %}
                   </div>
                 </div>
+                {% if team.team_avatar and team.team_avatar.image_path %}
+                  <img class="team-avatar" src="{{ team.team_avatar.image_path }}" alt="{{ team.team_avatar.name }}">
+                {% endif %}
                 {% if team.count == 0 %}
                   <span class="pill team-status">Üres</span>
                 {% elif team.count == 1 %}
@@ -326,6 +510,103 @@
               {% endif %}
             </div>
 
+            {% if my_status.team_number %}
+              <div class="proposal-box" style="margin-top:14px;">
+                <h3>Csapat avatár</h3>
+                {% if my_status.team_avatar and my_status.team_avatar.image_path %}
+                  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                    <img class="team-avatar big" src="{{ my_status.team_avatar.image_path }}" alt="{{ my_status.team_avatar.name }}">
+                    <div>
+                      <strong>{{ my_status.team_avatar.name }}</strong>
+                      <div class="small">Jelenlegi csapat avatár</div>
+                    </div>
+                  </div>
+                {% endif %}
+
+                {% if can_choose_avatar %}
+                  <form method="post" action="{{ url_for('choose_avatar', slug=event['slug']) }}">
+                    <div class="field">
+                      <label for="avatar_id">Avatar csere</label>
+                      <input type="hidden" id="avatar_id" name="avatar_id" value="{% if my_status.team_avatar %}{{ my_status.team_avatar.avatar_id }}{% endif %}">
+                      <details class="avatar-dropdown" data-avatar-dropdown data-input-id="avatar_id" data-force-selection="1">
+                        <summary class="avatar-dropdown-toggle">
+                          <span class="avatar-dropdown-value">
+                            <img class="avatar-dropdown-preview" data-avatar-preview hidden>
+                            <span class="avatar-dropdown-label" data-avatar-label>Válassz avatárt</span>
+                          </span>
+                          <span class="avatar-dropdown-caret">▼</span>
+                        </summary>
+                        <div class="avatar-dropdown-menu">
+                          {% for avatar in all_team_avatars %}
+                            <button type="button" class="avatar-option" data-avatar-option data-value="{{ avatar['id'] }}" data-label="{{ avatar['name'] }}" data-image="{{ avatar['image_path'] }}">
+                              <img src="{{ avatar['image_path'] }}" alt="{{ avatar['name'] }}">
+                              <span>{{ avatar['name'] }}</span>
+                            </button>
+                          {% endfor %}
+                        </div>
+                      </details>
+                    </div>
+                    <button type="submit" style="margin-top:10px;">Csapat avatár mentése</button>
+                  </form>
+                {% else %}
+                  <p class="small">Az avatár választás az esemény indulása előtt lehetséges.</p>
+                {% endif %}
+              </div>
+            {% endif %}
+
+            {% if event["extra_discipline_options"] %}
+              <div class="proposal-box" style="margin-top:14px;">
+                <h3>Extra versenyszám szavazás</h3>
+                {% if can_vote_extra %}
+                  <form method="post" action="{{ url_for('vote_extra_discipline', slug=event['slug']) }}">
+                    <div class="discipline-list-public">
+                      {% for option in event["extra_discipline_options"] %}
+                        <label class="discipline-item-public">
+                          <input type="radio" name="discipline_id" value="{{ option['id'] }}" {% if my_extra_vote and my_extra_vote['discipline_id'] == option['id'] %}checked{% endif %} required>
+                          <strong>{{ option["name"] }}</strong>
+                          <p>{{ option["description"] }}</p>
+                          {% if option["image_path"] %}
+                            <div class="discipline-media"><img src="{{ option['image_path'] }}" alt="{{ option['name'] }}"></div>
+                          {% endif %}
+                          {% if option["youtube_embed_url"] %}
+                            <div class="discipline-media">
+                              <iframe src="{{ option['youtube_embed_url'] }}" title="{{ option['name'] }} videó" loading="lazy" allowfullscreen></iframe>
+                            </div>
+                          {% endif %}
+                        </label>
+                      {% endfor %}
+                    </div>
+                    <button type="submit">{% if my_extra_vote %}Szavazat módosítása{% else %}Szavazat leadása{% endif %}</button>
+                  </form>
+                {% elif not my_status %}
+                  <div class="notice info">Az extra versenyszám szavazáshoz előbb jelentkezz az eseményre.</div>
+                {% else %}
+                  <div class="notice warn">A szavazás lezárult.</div>
+                {% endif %}
+
+                {% if my_extra_vote and extra_vote_summary %}
+                  <div class="notice ok" style="margin-top:12px;">
+                    A te szavazatod: <strong>{{ my_extra_vote["discipline_name"] }}</strong>.
+                  </div>
+                  <div class="vote-summary-list">
+                    {% for row in extra_vote_summary.options %}
+                      <div class="vote-summary-row">
+                        <span>
+                          <strong>{{ row["name"] }}</strong>
+                          {% if extra_vote_summary.winner_id == row["id"] %}
+                            <span class="pill ok" style="margin-left:6px;">Jelenlegi nyertes</span>
+                          {% endif %}
+                        </span>
+                        <span>{{ row["vote_count"] }} szavazat</span>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% elif event["extra_discipline_options"] %}
+                  <p class="small" style="margin-top:10px;">Az eredményeket a saját szavazat leadása után látod.</p>
+                {% endif %}
+              </div>
+            {% endif %}
+
             {% if event["has_fee"] == 1 %}
               <div class="proposal-box" style="margin-top:14px;">
                 <h3>Fizetési információk</h3>
@@ -382,6 +663,7 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
   <script>
     document.querySelectorAll('[data-copy]').forEach((button) => {
@@ -418,6 +700,45 @@
         form.classList.remove('open');
       });
     });
+
+    document.querySelectorAll('[data-avatar-dropdown]').forEach((dropdown) => {
+      const inputId = dropdown.dataset.inputId;
+      const input = document.getElementById(inputId);
+      const label = dropdown.querySelector('[data-avatar-label]');
+      const preview = dropdown.querySelector('[data-avatar-preview]');
+      const options = Array.from(dropdown.querySelectorAll('[data-avatar-option]'));
+      const forceSelection = dropdown.dataset.forceSelection === '1';
+      if (!input || !label || !preview || !options.length) return;
+
+      const syncSelection = (selectedOption) => {
+        if (!selectedOption) return;
+        input.value = selectedOption.dataset.value || '';
+        label.textContent = selectedOption.dataset.label || '';
+        const image = selectedOption.dataset.image || '';
+        if (image) {
+          preview.src = image;
+          preview.alt = selectedOption.dataset.label || 'Avatar';
+          preview.hidden = false;
+        } else {
+          preview.hidden = true;
+          preview.removeAttribute('src');
+          preview.alt = '';
+        }
+        options.forEach((option) => option.classList.toggle('selected', option === selectedOption));
+      };
+
+      const findByValue = (value) => options.find((option) => (option.dataset.value || '') === (value || ''));
+      const initial = findByValue(input.value) || (forceSelection ? options[0] : findByValue('') || options[0]);
+      syncSelection(initial);
+
+      options.forEach((option) => {
+        option.addEventListener('click', () => {
+          syncSelection(option);
+          dropdown.removeAttribute('open');
+        });
+      });
+    });
+
   </script>
 </body>
 </html>

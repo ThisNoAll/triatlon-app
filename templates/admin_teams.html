@@ -1,29 +1,183 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Csapatkezelés</title>
   <style>
     :root { --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --muted:#64748b; --line:#e2e8f0; --primary:#0f172a; --shadow:0 10px 30px rgba(15,23,42,.08); --radius:20px; }
-    *{box-sizing:border-box;} body{margin:0;font-family:Arial, Helvetica, sans-serif;background:var(--bg);color:var(--text);} .container{max-width:1300px;margin:0 auto;padding:24px;}
-    .topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:24px;flex-wrap:wrap;} .actions{display:flex;gap:10px;flex-wrap:wrap;}
-    .btn,button{display:inline-block;border:0;border-radius:14px;padding:10px 14px;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;} .btn-primary,button{background:var(--primary);color:#fff;} .btn-secondary{background:#fff;color:var(--text);border:1px solid var(--line);} .btn-danger{background:#7f1d1d;color:#fff;}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);} .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:24px;} .teams-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
-    .team-card,.member{border:1px solid var(--line);border-radius:16px;padding:14px;background:#fff;} .member{margin-bottom:10px;background:#f8fafc;} .field{margin-bottom:10px;} .field input,.field select,.field textarea{width:100%;border:1px solid #cbd5e1;border-radius:12px;padding:10px 12px;font-size:14px;}
-    .small{font-size:13px;color:var(--muted);} .stack>*+*{margin-top:14px;} @media (max-width:980px){.grid,.teams-grid{grid-template-columns:1fr;}}
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Arial, Helvetica, sans-serif; background:var(--bg); color:var(--text); }
+    .container { max-width:1300px; margin:0 auto; padding:24px; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:24px; flex-wrap:wrap; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; }
+    .btn, button { display:inline-block; border:0; border-radius:14px; padding:10px 14px; font-size:14px; font-weight:700; cursor:pointer; text-decoration:none; }
+    .btn-primary, button { background:var(--primary); color:#fff; }
+    .btn-secondary { background:#fff; color:var(--text); border:1px solid var(--line); }
+    .btn-danger { background:#7f1d1d; color:#fff; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow); }
+    .grid { display:grid; grid-template-columns:1.2fr .8fr; gap:24px; }
+    .teams-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:16px; }
+    .team-card, .member { border:1px solid var(--line); border-radius:16px; padding:14px; background:#fff; }
+    .member { margin-bottom:10px; background:#f8fafc; }
+    .field { margin-bottom:10px; }
+    .field input, .field select, .field textarea { width:100%; border:1px solid #cbd5e1; border-radius:12px; padding:10px 12px; font-size:14px; }
+    .small { font-size:13px; color:var(--muted); }
+    .stack > * + * { margin-top:14px; }
+    .add-player { margin-bottom:16px; border:1px solid #dbeafe; background:#eff6ff; }
+    .add-grid { display:grid; gap:10px; grid-template-columns:1fr 1fr 1fr 1fr auto; align-items:end; }
+    @media (max-width:980px){ .grid,.teams-grid,.add-grid { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
-<div class="container">
-  <div class="topbar">
-    <div><h1>Csapatkezelés</h1><p>{{ event["title"] }}</p></div>
-    <div class="actions"><a href="{{ url_for('admin_event_dashboard', event_id=event['id']) }}" class="btn btn-secondary">Vissza az eseményhez</a><a href="{{ url_for('event_home', slug=event['slug']) }}" class="btn btn-secondary">Publikus oldal</a></div>
+  <div class="container">
+    <div class="topbar">
+      <div>
+        <h1>Csapatkezelés</h1>
+        <p>{{ event["title"] }}</p>
+      </div>
+      <div class="actions">
+        <a href="{{ url_for('admin_event_dashboard', event_id=event['id']) }}" class="btn btn-secondary">Vissza az eseményhez</a>
+        <a href="{{ url_for('event_home', slug=event['slug']) }}" class="btn btn-secondary">Publikus oldal</a>
+      </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="member">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="card add-player">
+      <h2 style="margin-top:0;">Játékos hozzáadása</h2>
+      <form method="post" action="{{ url_for('admin_add_player', event_id=event['id']) }}">
+        <div class="add-grid">
+          <div class="field">
+            <label>Név</label>
+            <input type="text" name="participant_name" placeholder="Teljes név" required>
+          </div>
+          <div class="field">
+            <label>Email</label>
+            <input type="email" name="participant_email" placeholder="email@pelda.hu" required>
+          </div>
+          <div class="field">
+            <label>Csapat</label>
+            <select name="team_number" required>
+              {% for n in range(1, max_teams + 1) %}
+                <option value="{{ n }}">Csapat {{ n }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% if event["has_fee"] == 1 %}
+            <div class="field">
+              <label>Fizetési mód</label>
+              <select name="payment_method" required>
+                <option value="transfer">Utalás</option>
+                <option value="cash">Készpénz</option>
+              </select>
+            </div>
+          {% else %}
+            <input type="hidden" name="payment_method" value="none">
+            <div class="small">Ingyenes esemény</div>
+          {% endif %}
+          <button type="submit">Hozzáadás</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Csapatok</h2>
+        <div class="teams-grid">
+          {% for team in teams %}
+            <div class="team-card">
+              <h3>Csapat {{ team.team_number }}</h3>
+              <form method="post" action="{{ url_for('admin_rename_team', event_id=event['id'], team_number=team['team_number']) }}">
+                <div class="field">
+                  <input name="team_name" value="{{ team.team_name }}" placeholder="Csapatnév">
+                </div>
+                <button type="submit">Csapatnév mentése</button>
+              </form>
+              <div class="stack" style="margin-top:14px;">
+                {% if team.members %}
+                  {% for member in team.members %}
+                    <div class="member">
+                      <strong>{{ member['participant_name'] }}</strong>
+                      <div class="small">{{ member['participant_email'] }}</div>
+                      <div class="small">{{ payment_label(member['payment_status']) }} · {{ payment_method_label(member['payment_method']) }}</div>
+                      <form method="post" action="{{ url_for('admin_move_player', registration_id=member['id']) }}" style="margin-top:8px;">
+                        <div class="field">
+                          <select name="team_number">
+                            {% for n in range(1, max_teams + 1) %}
+                              <option value="{{ n }}" {% if n == team.team_number %}selected{% endif %}>Csapat {{ n }}</option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                        <button type="submit">Áthelyezés</button>
+                      </form>
+                      <form method="post" action="{{ url_for('admin_remove_from_team', registration_id=member['id']) }}" style="display:inline-block;margin-top:8px;">
+                        <button type="submit" class="btn-secondary">Kivétel</button>
+                      </form>
+                      <form method="post" action="{{ url_for('admin_delete_player', registration_id=member['id']) }}" style="display:inline-block;margin-top:8px;">
+                        <button type="submit" class="btn-danger">Törlés</button>
+                      </form>
+                      <form method="post" action="{{ url_for('admin_update_payment', registration_id=member['id']) }}" style="margin-top:8px;">
+                        <div class="field">
+                          <select name="payment_status">
+                            <option value="pending" {% if member['payment_status'] == 'pending' %}selected{% endif %}>Fizetésre vár</option>
+                            <option value="paid" {% if member['payment_status'] == 'paid' %}selected{% endif %}>Befizetve</option>
+                            <option value="invalid" {% if member['payment_status'] == 'invalid' %}selected{% endif %}>Érvénytelen</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <select name="payment_method">
+                            <option value="transfer" {% if member['payment_method'] == 'transfer' %}selected{% endif %}>Utalás</option>
+                            <option value="cash" {% if member['payment_method'] == 'cash' %}selected{% endif %}>Készpénz</option>
+                            <option value="none" {% if member['payment_method'] == 'none' %}selected{% endif %}>Nincs</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <textarea name="payment_note" rows="2">{{ member['payment_note'] or '' }}</textarea>
+                        </div>
+                        <button type="submit">Fizetés mentése</button>
+                      </form>
+                    </div>
+                  {% endfor %}
+                {% else %}
+                  <div class="small">Nincs játékos ebben a csapatban.</div>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Csapaton kívüli játékosok</h2>
+        {% if unassigned %}
+          {% for member in unassigned %}
+            <div class="member">
+              <strong>{{ member['participant_name'] }}</strong>
+              <div class="small">{{ member['participant_email'] }}</div>
+              <form method="post" action="{{ url_for('admin_move_player', registration_id=member['id']) }}">
+                <div class="field">
+                  <select name="team_number">
+                    {% for n in range(1, max_teams + 1) %}
+                      <option value="{{ n }}">Csapat {{ n }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <button type="submit">Csapatba helyezés</button>
+              </form>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="small">Nincs csapaton kívüli aktív játékos.</div>
+        {% endif %}
+      </div>
+    </div>
   </div>
-  {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for category, message in messages %}<div class="member">{{ message }}</div>{% endfor %}{% endif %}{% endwith %}
-  <div class="grid">
-    <div class="card"><h2>Csapatok</h2><div class="teams-grid">{% for team in teams %}<div class="team-card"><h3>Csapat {{ team.team_number }}</h3><form method="post" action="{{ url_for('admin_rename_team', event_id=event['id'], team_number=team['team_number']) }}"><div class="field"><input name="team_name" value="{{ team.team_name }}" placeholder="Csapatnév"></div><button type="submit">Csapatnév mentése</button></form><div class="stack" style="margin-top:14px;">{% if team.members %}{% for member in team.members %}<div class="member"><strong>{{ member['participant_name'] }}</strong><div class="small">{{ member['participant_email'] }}</div><div class="small">{{ payment_label(member['payment_status']) }} · {{ payment_method_label(member['payment_method']) }}</div><form method="post" action="{{ url_for('admin_move_player', registration_id=member['id']) }}" style="margin-top:8px;"><div class="field"><select name="team_number">{% for n in range(1,6) %}<option value="{{ n }}" {% if n == team.team_number %}selected{% endif %}>Csapat {{ n }}</option>{% endfor %}</select></div><button type="submit">Áthelyezés</button></form><form method="post" action="{{ url_for('admin_remove_from_team', registration_id=member['id']) }}" style="display:inline-block;margin-top:8px;"><button type="submit" class="btn-secondary">Kivétel</button></form> <form method="post" action="{{ url_for('admin_delete_player', registration_id=member['id']) }}" style="display:inline-block;margin-top:8px;"><button type="submit" class="btn-danger">Törlés</button></form><form method="post" action="{{ url_for('admin_update_payment', registration_id=member['id']) }}" style="margin-top:8px;"><div class="field"><select name="payment_status"><option value="pending">Fizetésre vár</option><option value="paid">Befizetve</option><option value="invalid">Érvénytelen</option></select></div><div class="field"><select name="payment_method"><option value="transfer">Utalás</option><option value="cash">Készpénz</option><option value="none">Nincs</option></select></div><div class="field"><textarea name="payment_note" rows="2">{{ member['payment_note'] or '' }}</textarea></div><button type="submit">Fizetés mentése</button></form></div>{% endfor %}{% else %}<div class="small">Nincs játékos ebben a csapatban.</div>{% endif %}</div></div>{% endfor %}</div></div>
-    <div class="card"><h2>Csapaton kívüli játékosok</h2>{% if unassigned %}{% for member in unassigned %}<div class="member"><strong>{{ member['participant_name'] }}</strong><div class="small">{{ member['participant_email'] }}</div><form method="post" action="{{ url_for('admin_move_player', registration_id=member['id']) }}"><div class="field"><select name="team_number">{% for n in range(1,6) %}<option value="{{ n }}">Csapat {{ n }}</option>{% endfor %}</select></div><button type="submit">Csapatba helyezés</button></form></div>{% endfor %}{% else %}<div class="small">Nincs csapaton kívüli aktív játékos.</div>{% endif %}</div>
-  </div>
-</div>
 </body>
 </html>

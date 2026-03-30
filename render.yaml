@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: triatlon
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: DATABASE_PATH
+        value: /opt/render/project/src/static/user-data/triatlon.sqlite3
+      - key: PERSIST_SUBDIR
+        value: user-data
+    disks:
+      - name: triatlon_user_data
+        mountPath: /opt/render/project/src/static/user-data
+        sizeGB: 1
