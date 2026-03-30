@@ -87,7 +87,7 @@
                     <td><strong>{{ row["total_points"] }}</strong></td>
                     <td>
                       <input name="result_image_{{ row['team_number'] }}" type="file" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp">
-                      <div class="small">Automatikus konvertálás: 800×600</div>
+                      <div class="small">Automatikus konvertálás: fekvő 800×600, álló 600×800</div>
                       {% if row["image_path"] %}
                         <img class="thumb" src="{{ row['image_path'] }}" alt="{{ row['team_name'] }}">
                       {% else %}

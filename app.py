@@ -94,8 +94,10 @@ ALLOWED_TEAM_AVATAR_UPLOAD_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 TEAM_AVATAR_TARGET_SIZE = 256
 EVENT_RESULT_IMAGE_UPLOAD_DIR = os.path.join(PERSIST_STATIC_DIR, "event_results")
 ALLOWED_EVENT_RESULT_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
-EVENT_RESULT_IMAGE_WIDTH = 800
-EVENT_RESULT_IMAGE_HEIGHT = 600
+EVENT_RESULT_IMAGE_LANDSCAPE_WIDTH = 800
+EVENT_RESULT_IMAGE_LANDSCAPE_HEIGHT = 600
+EVENT_RESULT_IMAGE_PORTRAIT_WIDTH = 600
+EVENT_RESULT_IMAGE_PORTRAIT_HEIGHT = 800
 TEAM_AVATAR_CATALOG = [
     {"code": "avatar-01", "name": "Láng", "image_path": "/static/team_avatars/avatar-01.svg"},
     {"code": "avatar-02", "name": "Villám", "image_path": "/static/team_avatars/avatar-02.svg"},
@@ -1236,7 +1238,15 @@ def save_uploaded_event_result_image(uploaded_file):
         raise ValueError("A feltöltött eredménykép nem értelmezhető képként.") from exc
 
     width, height = image.size
-    target_ratio = EVENT_RESULT_IMAGE_WIDTH / EVENT_RESULT_IMAGE_HEIGHT
+    is_portrait = height > width
+    if is_portrait:
+        target_width = EVENT_RESULT_IMAGE_PORTRAIT_WIDTH
+        target_height = EVENT_RESULT_IMAGE_PORTRAIT_HEIGHT
+    else:
+        target_width = EVENT_RESULT_IMAGE_LANDSCAPE_WIDTH
+        target_height = EVENT_RESULT_IMAGE_LANDSCAPE_HEIGHT
+
+    target_ratio = target_width / target_height
     source_ratio = width / height if height else target_ratio
 
     if source_ratio > target_ratio:
@@ -1251,7 +1261,7 @@ def save_uploaded_event_result_image(uploaded_file):
     image = image.crop((left, top, left + crop_width, top + crop_height))
 
     resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
-    image = image.resize((EVENT_RESULT_IMAGE_WIDTH, EVENT_RESULT_IMAGE_HEIGHT), resampling)
+    image = image.resize((target_width, target_height), resampling)
 
     stored_name = f"result-{uuid.uuid4().hex}.jpg"
     target_path = os.path.join(EVENT_RESULT_IMAGE_UPLOAD_DIR, stored_name)
