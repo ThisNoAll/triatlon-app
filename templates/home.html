@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="hu">
 <head>
   <meta charset="UTF-8">
@@ -34,7 +34,7 @@
     .flash.error { background:var(--err-bg); color:var(--err-text); }
     .flash.info, .notice.info { background:var(--info-bg); color:var(--info-text); }
     .notice.warn { background:var(--warn-bg); color:var(--warn-text); }
-    .member { background:#f8fafc; border:1px solid #edf2f7; font-size:14px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .member { background:#f8fafc; border:1px solid #edf2f7; font-size:14px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
     .member.hidden { color:var(--muted); font-style:italic; }
     .member.empty, .small, p { color:var(--muted); }
     .team-card { padding:18px; background:#eff6ff; border-color:#bfdbfe; }
@@ -52,8 +52,8 @@
     .team-progress-fill { height:100%; border-radius:999px; background:linear-gradient(90deg, #f59e0b, #fbbf24); }
     .member-list { display:grid; gap:10px; padding:14px; border-radius:18px; background:#ffffff; border:1px solid #dbe7f4; box-shadow:inset 0 1px 0 rgba(255,255,255,.85); }
     .member { padding:10px 12px; border-radius:16px; background:#f8fafc; border-color:#e2e8f0; box-shadow:0 4px 10px rgba(148,163,184,.10); }
-    .member-name { font-weight:700; color:var(--text); line-height:1.25; }
-    .pay-badge { padding:5px 10px; font-size:11px; white-space:nowrap; flex-shrink:0; min-width:96px; text-align:center; box-shadow:0 2px 8px rgba(245,158,11,.10); }
+    .member-name { font-weight:700; color:var(--text); line-height:1.25; min-width:0; flex:1 1 auto; overflow-wrap:anywhere; word-break:break-word; }
+    .pay-badge { padding:5px 10px; font-size:11px; white-space:nowrap; flex-shrink:0; min-width:96px; max-width:100%; text-align:center; box-shadow:0 2px 8px rgba(245,158,11,.10); margin-left:auto; }
     .team-card.editable .team-head { position:relative; }
     .team-title-wrap { display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap; }
     .team-name-trigger { display:inline-flex; align-items:center; gap:8px; padding:0; border:0; background:none; color:inherit; cursor:pointer; text-align:left; }
@@ -196,8 +196,7 @@
               {% endif %}
             </div>
           {% else %}
-            <span class="badge">{{ event["title"] }}</span>
-            <h1>Egy nevezés, automatikus csapatbeosztás.</h1>
+            <h1>{{ event["title"] }}</h1>
             {% if event["description_html"] %}<div class="rich-text">{{ event["description_html"] }}</div>{% endif %}
             {% if event["fixed_disciplines"] %}
               <div class="discipline-board">
@@ -289,6 +288,32 @@
             <form method="post" action="{{ url_for('register_email', slug=event['slug']) }}">
               <div class="field"><label for="name">Név</label><input id="name" name="name" type="text" placeholder="Teljes név" required></div>
               <div class="field"><label for="email">Email cím</label><input id="email" name="email" type="email" placeholder="email@pelda.hu" required></div>
+              <div class="field">
+                <label for="teammate_preference">Csapat beállítás</label>
+                <select id="teammate_preference" name="teammate_preference" data-team-pref-select>
+                  {% if team_pairing_mode != team_pairing_fixed_only %}
+                    <option value="{{ team_pref_random }}">Véletlenszerű csapattárs</option>
+                  {% endif %}
+                  {% if team_pairing_mode != team_pairing_random_only %}
+                    <option value="{{ team_pref_fixed }}">Fix csapattárs</option>
+                  {% endif %}
+                </select>
+              </div>
+              {% if team_pairing_mode in (team_pairing_mixed_confirm, team_pairing_fixed_only) %}
+                <div class="field" data-fixed-only-field hidden>
+                  <label for="fixed_partner_registration_id">Már regisztrált fix csapattárs kiválasztása</label>
+                  <select id="fixed_partner_registration_id" name="fixed_partner_registration_id">
+                    <option value="">Még nincs kiválasztva</option>
+                    {% for candidate in fixed_waiting_candidates %}
+                      <option value="{{ candidate['registration_id'] }}" data-target-name="{{ candidate['participant_name'] }}" data-expected-name="{{ candidate['fixed_partner_name'] }}">{{ candidate['participant_name'] }} ({{ candidate['team_number'] }}. csapat)</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              {% endif %}
+              <div class="field" data-fixed-only-field hidden>
+                <label for="fixed_partner_name">Fix csapattárs neve (ha még nincs regisztrálva)</label>
+                <input id="fixed_partner_name" name="fixed_partner_name" type="text" placeholder="Pl. Kis Pista">
+              </div>
               <div class="field"><label for="team_name_idea">Első csapatnév-ötlet (opcionális)</label><input id="team_name_idea" name="team_name_idea" type="text" placeholder="Pl. Villámkiflik"></div>
               {% if all_team_avatars %}
                 <div class="field">
@@ -332,6 +357,32 @@
 
             {% if google_enabled %}
               <form method="get" action="{{ url_for('google_login', slug=event['slug']) }}" style="margin-top:12px;">
+                <div class="field">
+                  <label for="teammate_preference_google">Csapat beállítás Google jelentkezéshez</label>
+                  <select id="teammate_preference_google" name="teammate_preference" data-team-pref-select>
+                    {% if team_pairing_mode != team_pairing_fixed_only %}
+                      <option value="{{ team_pref_random }}">Véletlenszerű csapattárs</option>
+                    {% endif %}
+                    {% if team_pairing_mode != team_pairing_random_only %}
+                      <option value="{{ team_pref_fixed }}">Fix csapattárs</option>
+                    {% endif %}
+                  </select>
+                </div>
+                {% if team_pairing_mode in (team_pairing_mixed_confirm, team_pairing_fixed_only) %}
+                  <div class="field" data-fixed-only-field hidden>
+                    <label for="fixed_partner_registration_id_google">Már regisztrált fix csapattárs kiválasztása</label>
+                    <select id="fixed_partner_registration_id_google" name="fixed_partner_registration_id">
+                      <option value="">Még nincs kiválasztva</option>
+                      {% for candidate in fixed_waiting_candidates %}
+                        <option value="{{ candidate['registration_id'] }}" data-target-name="{{ candidate['participant_name'] }}" data-expected-name="{{ candidate['fixed_partner_name'] }}">{{ candidate['participant_name'] }} ({{ candidate['team_number'] }}. csapat)</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                {% endif %}
+                <div class="field" data-fixed-only-field hidden>
+                  <label for="fixed_partner_name_google">Fix csapattárs neve (ha még nincs regisztrálva)</label>
+                  <input id="fixed_partner_name_google" name="fixed_partner_name" type="text" placeholder="Pl. Kis Pista">
+                </div>
                 <div class="field">
                   <label for="team_name_idea_google">Első csapatnév-ötlet Google jelentkezéshez (opcionális)</label>
                   <input id="team_name_idea_google" name="team_name_idea" type="text" placeholder="Pl. Villámkiflik">
@@ -417,7 +468,7 @@
                 {% if team.count == 0 %}
                   <span class="pill team-status">Üres</span>
                 {% elif team.count == 1 %}
-                  <span class="pill team-status">Folyamatban</span>
+                  <span class="pill team-status">{% if team.show_single_member_name and "jóváhagyta" in team.single_waiting_message %}Fix csapattárs jóváhagyva{% elif team.show_single_member_name %}Fix csapattársra vár{% else %}Folyamatban{% endif %}</span>
                 {% endif %}
               </div>
               {% if can_edit_team_name %}
@@ -451,8 +502,13 @@
               {% if team.count == 0 %}
                 <div class="member empty">Még nincs jelentkező</div>
               {% elif team.count == 1 %}
-                <div class="member hidden">1 játékos már bent van, de a neve még rejtve van.</div>
-                <div class="member empty">Várakozás a 2. főre</div>
+                {% if team.show_single_member_name %}
+                  <div class="member"><span class="member-name">{{ team.visible_names[0] }}</span></div>
+                  <div class="member empty">{{ team.single_waiting_message }}</div>
+                {% else %}
+                  <div class="member hidden">1 játékos már bent van, de a neve még rejtve van.</div>
+                  <div class="member empty">Várakozás a 2. főre</div>
+                {% endif %}
               {% elif team.count == 2 and team.capacity == 2 %}
                 {% for member in team.members %}<div class="member"><span class="member-name">{{ member["participant_name"] }}</span>{% if event["has_fee"] == 1 %}<span class="pay-badge {{ member['payment_status'] }}">{{ payment_label(member["payment_status"]) }}</span>{% endif %}</div>{% endfor %}
               {% elif team.count == 2 and team.capacity == 3 %}
@@ -479,6 +535,14 @@
             <div class="notice info">Ha jelentkeztél, ugyanebben a böngészőben itt fogod látni a saját státuszodat.</div>
           {% else %}
             <div class="notice ok">{{ my_status.status_label }}</div>
+            {% if my_status.can_switch_to_random %}
+              <div class="notice info">
+                Jelenleg fix csapattárs visszajelzésére vársz.
+                <form method="post" action="{{ url_for('switch_to_random_teammate', slug=event['slug']) }}" style="margin-top:8px;">
+                  <button type="submit" class="btn-secondary">Átállítás véletlenszerű csapattársra</button>
+                </form>
+              </div>
+            {% endif %}
             {% if my_status.team_number %}
               <div class="spotlight">
                 {% if my_status.team_name_state and my_status.team_name_state.is_final %}
@@ -749,6 +813,60 @@
           syncSelection(option);
           dropdown.removeAttribute('open');
         });
+      });
+    });
+
+    document.querySelectorAll('form').forEach((form) => {
+      const select = form.querySelector('[data-team-pref-select]');
+      if (!select) return;
+      const fixedFields = Array.from(form.querySelectorAll('[data-fixed-only-field]'));
+      const syncTeamPreferenceFields = () => {
+        const fixedMode = select.value === '{{ team_pref_fixed }}';
+        const partnerSelect = form.querySelector('select[name="fixed_partner_registration_id"]');
+        fixedFields.forEach((field) => {
+          field.hidden = !fixedMode;
+          const inputs = field.querySelectorAll('input,select,textarea');
+          inputs.forEach((input) => {
+            if (fixedMode) {
+              input.removeAttribute('disabled');
+              if (input.name === 'fixed_partner_name' && !partnerSelect) {
+                input.setAttribute('required', 'required');
+              }
+            } else {
+              input.setAttribute('disabled', 'disabled');
+              input.removeAttribute('required');
+              if (input.tagName === 'SELECT') {
+                input.value = '';
+              } else if (input.type === 'text') {
+                input.value = '';
+              }
+            }
+          });
+        });
+      };
+      select.addEventListener('change', syncTeamPreferenceFields);
+      syncTeamPreferenceFields();
+
+      form.addEventListener('submit', (event) => {
+        const fixedMode = select.value === '{{ team_pref_fixed }}';
+        if (!fixedMode) return;
+
+        const partnerSelect = form.querySelector('select[name="fixed_partner_registration_id"]');
+        if (!partnerSelect || !partnerSelect.value) return;
+
+        const selected = partnerSelect.options[partnerSelect.selectedIndex];
+        const targetName = (selected.dataset.targetName || '').trim();
+        const expectedName = (selected.dataset.expectedName || '').trim();
+        const registrantName = (form.querySelector('input[name="name"]').value || '').trim() || 'jelentkező';
+
+        let message = `${targetName} fix csapattársat vár. Biztos, hogy te vagy az ${registrantName}`;
+        if (targetName && expectedName) {
+          message = `${targetName}, ${expectedName} nevű csapattársát várja. Biztos, hogy te vagy az ${registrantName}`;
+        }
+
+        if (!window.confirm(message)) {
+          event.preventDefault();
+        }
       });
     });
 

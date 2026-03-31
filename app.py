@@ -87,6 +87,14 @@ PAYMENT_METHOD_TRANSFER = "transfer"
 PAYMENT_METHOD_CASH = "cash"
 PAYMENT_METHOD_NONE = "none"
 
+TEAM_PREF_RANDOM = "random"
+TEAM_PREF_FIXED = "fixed"
+
+TEAM_PAIRING_MIXED = "mixed_auto"
+TEAM_PAIRING_MIXED_CONFIRM = "mixed"
+TEAM_PAIRING_FIXED_ONLY = "fixed_only"
+TEAM_PAIRING_RANDOM_ONLY = "random_only"
+
 DISCIPLINE_IMAGE_UPLOAD_DIR = os.path.join(PERSIST_STATIC_DIR, "uploads", "discipline_images")
 ALLOWED_DISCIPLINE_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 TEAM_AVATAR_UPLOAD_DIR = os.path.join(PERSIST_STATIC_DIR, "team_avatars", "custom")
@@ -98,6 +106,8 @@ EVENT_RESULT_IMAGE_LANDSCAPE_WIDTH = 800
 EVENT_RESULT_IMAGE_LANDSCAPE_HEIGHT = 600
 EVENT_RESULT_IMAGE_PORTRAIT_WIDTH = 600
 EVENT_RESULT_IMAGE_PORTRAIT_HEIGHT = 800
+DISCIPLINE_IMAGE_MAX_WIDTH = 1024
+DISCIPLINE_IMAGE_MAX_HEIGHT = 768
 TEAM_AVATAR_CATALOG = [
     {"code": "avatar-01", "name": "Láng", "image_path": "/static/team_avatars/avatar-01.svg"},
     {"code": "avatar-02", "name": "Villám", "image_path": "/static/team_avatars/avatar-02.svg"},
@@ -139,7 +149,7 @@ def get_database_engine():
 
 def translate_sql(sql):
     if get_database_engine() == "postgres":
-        return sql.replace("?", "%s")
+        return sql.replace("", "%s")
     return sql
 
 
@@ -243,7 +253,8 @@ def init_db():
                     has_fee INTEGER NOT NULL DEFAULT 0,
                     fee_amount INTEGER DEFAULT 0,
                     beneficiary_name TEXT,
-                    bank_account TEXT
+                    bank_account TEXT,
+                    team_pairing_mode TEXT NOT NULL DEFAULT 'mixed_auto'
                 )
                 """
             )
@@ -269,7 +280,11 @@ def init_db():
                 removed_from_team INTEGER NOT NULL DEFAULT 0,
                 is_deleted INTEGER NOT NULL DEFAULT 0,
                 pending_team_name_idea TEXT,
-                pending_team_avatar_idea INTEGER
+                pending_team_avatar_idea INTEGER,
+                teammate_preference TEXT NOT NULL DEFAULT 'random',
+                fixed_partner_registration_id INTEGER,
+                fixed_partner_name TEXT,
+                fixed_partner_approved_by_admin INTEGER NOT NULL DEFAULT 0
             )
                 """
             )
@@ -410,7 +425,8 @@ def init_db():
                 has_fee INTEGER NOT NULL DEFAULT 0,
                 fee_amount INTEGER DEFAULT 0,
                 beneficiary_name TEXT,
-                bank_account TEXT
+                bank_account TEXT,
+                team_pairing_mode TEXT NOT NULL DEFAULT 'mixed_auto'
             );
 
             CREATE TABLE IF NOT EXISTS registrations (
@@ -437,6 +453,10 @@ def init_db():
                 is_deleted INTEGER NOT NULL DEFAULT 0,
                 pending_team_name_idea TEXT,
                 pending_team_avatar_idea INTEGER,
+                teammate_preference TEXT NOT NULL DEFAULT 'random',
+                fixed_partner_registration_id INTEGER,
+                fixed_partner_name TEXT,
+                fixed_partner_approved_by_admin INTEGER NOT NULL DEFAULT 0,
 
                 FOREIGN KEY(event_id) REFERENCES events(id)
             );
@@ -564,6 +584,14 @@ def ensure_event_schema(db):
             cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS slug TEXT")
             cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS results_html TEXT")
             cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS results_published_at TEXT")
+            cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS team_pairing_mode TEXT")
+            cur.execute(
+                """
+                UPDATE events
+                SET team_pairing_mode = 'mixed_auto'
+                WHERE team_pairing_mode IS NULL OR team_pairing_mode = ''
+                """
+            )
             cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_events_slug_unique ON events (slug)")
         db.commit()
         rows = query_all("SELECT id, title, event_at, slug FROM events ORDER BY id ASC")
@@ -575,6 +603,15 @@ def ensure_event_schema(db):
             db.execute("ALTER TABLE events ADD COLUMN results_html TEXT")
         if "results_published_at" not in columns:
             db.execute("ALTER TABLE events ADD COLUMN results_published_at TEXT")
+        if "team_pairing_mode" not in columns:
+            db.execute("ALTER TABLE events ADD COLUMN team_pairing_mode TEXT")
+        db.execute(
+            """
+            UPDATE events
+            SET team_pairing_mode = 'mixed_auto'
+            WHERE team_pairing_mode IS NULL OR team_pairing_mode = ''
+            """
+        )
         rows = db.execute("SELECT id, title, event_at, slug FROM events ORDER BY id ASC").fetchall()
 
     used_slugs = set()
@@ -589,7 +626,7 @@ def ensure_event_schema(db):
             row["event_at"][:10] if row["event_at"] else "",
             used_slugs,
         )
-        db.execute("UPDATE events SET slug = ? WHERE id = ?", (slug, row["id"]))
+        db.execute("UPDATE events SET slug = ? WHERE id = ? ", (slug, row["id"]))
         used_slugs.add(slug)
 
 
@@ -598,6 +635,24 @@ def ensure_registration_schema(db):
         with db.cursor() as cur:
             cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS pending_team_name_idea TEXT")
             cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS pending_team_avatar_idea INTEGER")
+            cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS teammate_preference TEXT")
+            cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS fixed_partner_registration_id INTEGER")
+            cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS fixed_partner_name TEXT")
+            cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS fixed_partner_approved_by_admin INTEGER")
+            cur.execute(
+                """
+                UPDATE registrations
+                SET teammate_preference = 'random'
+                WHERE teammate_preference IS NULL OR teammate_preference = ''
+                """
+            )
+            cur.execute(
+                """
+                UPDATE registrations
+                SET fixed_partner_approved_by_admin = 0
+                WHERE fixed_partner_approved_by_admin IS NULL
+                """
+            )
         db.commit()
     else:
         columns = {row["name"] for row in db.execute("PRAGMA table_info(registrations)").fetchall()}
@@ -605,6 +660,28 @@ def ensure_registration_schema(db):
             db.execute("ALTER TABLE registrations ADD COLUMN pending_team_name_idea TEXT")
         if "pending_team_avatar_idea" not in columns:
             db.execute("ALTER TABLE registrations ADD COLUMN pending_team_avatar_idea INTEGER")
+        if "teammate_preference" not in columns:
+            db.execute("ALTER TABLE registrations ADD COLUMN teammate_preference TEXT")
+        if "fixed_partner_registration_id" not in columns:
+            db.execute("ALTER TABLE registrations ADD COLUMN fixed_partner_registration_id INTEGER")
+        if "fixed_partner_name" not in columns:
+            db.execute("ALTER TABLE registrations ADD COLUMN fixed_partner_name TEXT")
+        if "fixed_partner_approved_by_admin" not in columns:
+            db.execute("ALTER TABLE registrations ADD COLUMN fixed_partner_approved_by_admin INTEGER")
+        db.execute(
+            """
+            UPDATE registrations
+            SET teammate_preference = 'random'
+            WHERE teammate_preference IS NULL OR teammate_preference = ''
+            """
+        )
+        db.execute(
+            """
+            UPDATE registrations
+            SET fixed_partner_approved_by_admin = 0
+            WHERE fixed_partner_approved_by_admin IS NULL
+            """
+        )
 
 
 def ensure_discipline_schema(db):
@@ -871,7 +948,7 @@ def ensure_team_avatar_catalog_seeded():
         execute(
             """
             INSERT INTO team_avatars (code, name, image_path, created_at)
-            VALUES (?, ?, ?, ?)
+            VALUES ( ?, ?, ?, ?)
             """,
             (item["code"], item["name"], item["image_path"], now_str()),
         )
@@ -964,7 +1041,7 @@ def format_event_description(value):
         return Markup("")
     if "<" in raw and ">" in raw:
         return Markup(sanitize_event_description_html(raw))
-    paragraphs = [segment.strip() for segment in re.split(r"\r?\n\r?\n", raw) if segment.strip()]
+    paragraphs = [segment.strip() for segment in re.split(r"\r\n\r\n", raw) if segment.strip()]
     if not paragraphs:
         return Markup("")
     html_parts = []
@@ -980,7 +1057,7 @@ def compact_bank_account(value):
 def build_payment_reference(event_id, participant_name=None):
     if participant_name:
         return f"KUPA + {participant_name} + {get_event_identifier(event_id)}"
-    return f"KUPA + saj?t n?v + {get_event_identifier(event_id)}"
+    return f"KUPA + sajt nv + {get_event_identifier(event_id)}"
 
 
 def build_payment_details(event_row, participant_name=None):
@@ -1036,11 +1113,11 @@ def admin_required(fn):
 
 
 def get_event(event_id):
-    return query_one("SELECT * FROM events WHERE id = ?", (event_id,))
+    return query_one("SELECT * FROM events WHERE id = ? ", (event_id,))
 
 
 def get_event_by_slug(slug):
-    return query_one("SELECT * FROM events WHERE slug = ?", (slug,))
+    return query_one("SELECT * FROM events WHERE slug = ? ", (slug,))
 
 
 def get_all_events():
@@ -1052,8 +1129,7 @@ def get_discipline_by_id(discipline_id):
         """
         SELECT id, name, description, image_path, youtube_url, created_at
         FROM disciplines
-        WHERE id = ?
-        """,
+        WHERE id = ? """,
         (discipline_id,),
     )
 
@@ -1074,7 +1150,7 @@ def get_team_avatar_selection(event_id, team_number):
         SELECT s.event_id, s.team_number, s.avatar_id, a.code, a.name, a.image_path
         FROM team_avatar_selections s
         JOIN team_avatars a ON a.id = s.avatar_id
-        WHERE s.event_id = ? AND s.team_number = ?
+        WHERE s.event_id = ? AND s.team_number = ? 
         LIMIT 1
         """,
         (event_id, team_number),
@@ -1082,16 +1158,16 @@ def get_team_avatar_selection(event_id, team_number):
 
 
 def choose_team_avatar(event_id, team_number, avatar_id, registration_id):
-    avatar = query_one("SELECT id FROM team_avatars WHERE id = ?", (avatar_id,))
+    avatar = query_one("SELECT id FROM team_avatars WHERE id = ? ", (avatar_id,))
     if not avatar:
-        raise ValueError("Érvénytelen avatár.")
+        raise ValueError("Á‰rvénytelen avatár.")
 
     execute(
         """
         INSERT INTO team_avatar_selections (
             event_id, team_number, avatar_id, selected_by_registration_id, created_at
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ( ?, ?, ?, ?, ?)
         ON CONFLICT(event_id, team_number)
         DO UPDATE SET
             avatar_id = excluded.avatar_id,
@@ -1113,7 +1189,7 @@ def parse_avatar_id(value):
 def avatar_exists(avatar_id):
     if not avatar_id:
         return False
-    row = query_one("SELECT id FROM team_avatars WHERE id = ?", (avatar_id,))
+    row = query_one("SELECT id FROM team_avatars WHERE id = ? ", (avatar_id,))
     return row is not None
 
 
@@ -1166,7 +1242,42 @@ def save_uploaded_discipline_image(uploaded_file):
     os.makedirs(DISCIPLINE_IMAGE_UPLOAD_DIR, exist_ok=True)
     stored_name = f"{uuid.uuid4().hex}.{extension}"
     target_path = os.path.join(DISCIPLINE_IMAGE_UPLOAD_DIR, stored_name)
-    uploaded_file.save(target_path)
+
+    Image = get_pillow_image_module()
+    try:
+        with Image.open(uploaded_file.stream) as source:
+            width, height = source.size
+            if width <= DISCIPLINE_IMAGE_MAX_WIDTH and height <= DISCIPLINE_IMAGE_MAX_HEIGHT:
+                uploaded_file.stream.seek(0)
+                uploaded_file.save(target_path)
+                return f"/static/{PERSIST_SUBDIR}/uploads/discipline_images/{stored_name}"
+
+            image = source.copy()
+    except Exception as exc:
+        raise ValueError("A feltöltött versenyszám-kép nem értelmezhető képként.") from exc
+
+    resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+    image.thumbnail((DISCIPLINE_IMAGE_MAX_WIDTH, DISCIPLINE_IMAGE_MAX_HEIGHT), resampling)
+
+    save_format = extension.upper()
+    save_kwargs = {}
+    if extension in {"jpg", "jpeg"}:
+        save_format = "JPEG"
+        if image.mode not in ("RGB", "L"):
+            image = image.convert("RGB")
+        save_kwargs = {"quality": 90, "optimize": True}
+    elif extension == "png":
+        save_format = "PNG"
+        save_kwargs = {"optimize": True}
+    elif extension == "webp":
+        save_format = "WEBP"
+        if image.mode not in ("RGB", "RGBA", "L"):
+            image = image.convert("RGB")
+        save_kwargs = {"quality": 90}
+    elif extension == "gif":
+        save_format = "GIF"
+
+    image.save(target_path, format=save_format, **save_kwargs)
     return f"/static/{PERSIST_SUBDIR}/uploads/discipline_images/{stored_name}"
 
 
@@ -1186,7 +1297,7 @@ def save_uploaded_team_avatar_image(uploaded_file):
 
     filename = secure_filename(uploaded_file.filename or "")
     if not filename or "." not in filename:
-        raise ValueError("Érvénytelen avatar fájlnév.")
+        raise ValueError("Á‰rvénytelen avatar fájlnév.")
 
     extension = filename.rsplit(".", 1)[1].lower()
     if extension not in ALLOWED_TEAM_AVATAR_UPLOAD_EXTENSIONS:
@@ -1222,7 +1333,7 @@ def save_uploaded_event_result_image(uploaded_file):
 
     filename = secure_filename(uploaded_file.filename or "")
     if not filename or "." not in filename:
-        raise ValueError("Érvénytelen eredménykép fájlnév.")
+        raise ValueError("Á‰rvénytelen eredménykép fájlnév.")
 
     extension = filename.rsplit(".", 1)[1].lower()
     if extension not in ALLOWED_EVENT_RESULT_IMAGE_EXTENSIONS:
@@ -1322,8 +1433,7 @@ def get_event_disciplines_by_role(event_id, role):
         SELECT d.id, d.name, d.description, d.image_path, d.youtube_url, ed.sort_order
         FROM event_disciplines ed
         JOIN disciplines d ON d.id = ed.discipline_id
-        WHERE ed.event_id = ? AND ed.role = ?
-        ORDER BY ed.sort_order ASC, ed.id ASC
+        WHERE ed.event_id = ? AND ed.role = ? ORDER BY ed.sort_order ASC, ed.id ASC
         """,
         (event_id, role),
     )
@@ -1391,7 +1501,7 @@ def parse_new_disciplines_from_form():
             continue
         if not name or not description:
             raise ValueError(
-                "Új versenyszámnál a név és a leírás együtt kötelező."
+                "Ášj versenyszámnál a név és a leírás együtt kötelező."
             )
         image_path = save_uploaded_discipline_image(image_file) if has_image else ""
         if target not in ("fixed", "extra"):
@@ -1478,9 +1588,8 @@ def apply_discipline_updates_from_form():
             execute(
                 """
                 UPDATE disciplines
-                SET name = ?, description = ?, youtube_url = ?, image_path = ?
-                WHERE id = ?
-                """,
+                SET name = ? , description = ? , youtube_url = ? , image_path = ? 
+                WHERE id = ? """,
                 (
                     row["name"],
                     row["description"],
@@ -1518,15 +1627,15 @@ def create_or_get_discipline(name, description, image_path="", youtube_url=""):
         updates = []
         params = []
         if normalized_image_path and not (existing["image_path"] or "").strip():
-            updates.append("image_path = ?")
+            updates.append("image_path = ")
             params.append(normalized_image_path)
         if normalized_youtube_url and not (existing["youtube_url"] or "").strip():
-            updates.append("youtube_url = ?")
+            updates.append("youtube_url = ")
             params.append(normalized_youtube_url)
         if updates:
             params.append(existing["id"])
             execute(
-                f"UPDATE disciplines SET {', '.join(updates)} WHERE id = ?",
+                f"UPDATE disciplines SET {', '.join(updates)} WHERE id = ",
                 tuple(params),
             )
         return existing["id"]
@@ -1534,7 +1643,7 @@ def create_or_get_discipline(name, description, image_path="", youtube_url=""):
     cur = execute(
         """
         INSERT INTO disciplines (name, description, image_path, youtube_url, created_at)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ( ?, ?, ?, ?, ?)
         """,
         (
             normalized_name,
@@ -1584,15 +1693,15 @@ def resolve_event_discipline_selection():
 
 
 def save_event_discipline_links(event_id, fixed_ids, extra_ids):
-    execute("DELETE FROM event_extra_votes WHERE event_id = ?", (event_id,))
-    execute("DELETE FROM event_disciplines WHERE event_id = ?", (event_id,))
+    execute("DELETE FROM event_extra_votes WHERE event_id = ? ", (event_id,))
+    execute("DELETE FROM event_disciplines WHERE event_id = ? ", (event_id,))
 
     order = 1
     for discipline_id in unique_int_list(fixed_ids):
         execute(
             """
             INSERT INTO event_disciplines (event_id, discipline_id, role, sort_order)
-            VALUES (?, ?, 'fixed', ?)
+            VALUES ( ?, ?, 'fixed', ?)
             """,
             (event_id, discipline_id, order),
         )
@@ -1606,7 +1715,7 @@ def save_event_discipline_links(event_id, fixed_ids, extra_ids):
         execute(
             """
             INSERT INTO event_disciplines (event_id, discipline_id, role, sort_order)
-            VALUES (?, ?, 'extra', ?)
+            VALUES ( ?, ?, 'extra', ?)
             """,
             (event_id, discipline_id, order),
         )
@@ -1621,7 +1730,7 @@ def get_event_extra_vote(event_id, registration_id):
         SELECT v.*, d.name AS discipline_name
         FROM event_extra_votes v
         JOIN disciplines d ON d.id = v.discipline_id
-        WHERE v.event_id = ? AND v.registration_id = ?
+        WHERE v.event_id = ? AND v.registration_id = ? 
         LIMIT 1
         """,
         (event_id, registration_id),
@@ -1637,7 +1746,7 @@ def get_event_extra_vote_summary(event_id):
         """
         SELECT discipline_id, COUNT(*) AS vote_count
         FROM event_extra_votes
-        WHERE event_id = ?
+        WHERE event_id = ? 
         GROUP BY discipline_id
         """,
         (event_id,),
@@ -1671,31 +1780,41 @@ def build_admin_event_form_context(event_row=None):
     if event_row:
         selected_fixed_ids = [row["id"] for row in get_event_fixed_disciplines(event_row["id"])]
         selected_extra_ids = [row["id"] for row in get_event_extra_discipline_options(event_row["id"])]
+    selected_team_pairing_mode = normalize_event_team_pairing_mode(
+        event_row["team_pairing_mode"] if event_row and "team_pairing_mode" in event_row.keys() else TEAM_PAIRING_MIXED
+    )
     return {
         "mode": "edit" if event_row else "create",
         "event": event_view,
         "all_disciplines": get_all_disciplines(),
         "selected_fixed_ids": selected_fixed_ids,
         "selected_extra_ids": selected_extra_ids,
+        "selected_team_pairing_mode": selected_team_pairing_mode,
+        "team_pairing_modes": [
+            {"value": TEAM_PAIRING_MIXED, "label": team_pairing_mode_label(TEAM_PAIRING_MIXED)},
+            {"value": TEAM_PAIRING_MIXED_CONFIRM, "label": team_pairing_mode_label(TEAM_PAIRING_MIXED_CONFIRM)},
+            {"value": TEAM_PAIRING_FIXED_ONLY, "label": team_pairing_mode_label(TEAM_PAIRING_FIXED_ONLY)},
+            {"value": TEAM_PAIRING_RANDOM_ONLY, "label": team_pairing_mode_label(TEAM_PAIRING_RANDOM_ONLY)},
+        ],
     }
 
 
 def delete_event_and_related_data(event_id):
     proposal_ids = query_all(
-        "SELECT id FROM team_name_proposals WHERE event_id = ?",
+        "SELECT id FROM team_name_proposals WHERE event_id = ? ",
         (event_id,),
     )
     for proposal in proposal_ids:
-        execute("DELETE FROM team_name_votes WHERE proposal_id = ?", (proposal["id"],))
+        execute("DELETE FROM team_name_votes WHERE proposal_id = ? ", (proposal["id"],))
 
-    execute("DELETE FROM team_avatar_selections WHERE event_id = ?", (event_id,))
-    execute("DELETE FROM event_results WHERE event_id = ?", (event_id,))
-    execute("DELETE FROM event_result_points WHERE event_id = ?", (event_id,))
-    execute("DELETE FROM team_name_proposals WHERE event_id = ?", (event_id,))
-    execute("DELETE FROM event_extra_votes WHERE event_id = ?", (event_id,))
-    execute("DELETE FROM event_disciplines WHERE event_id = ?", (event_id,))
-    execute("DELETE FROM registrations WHERE event_id = ?", (event_id,))
-    execute("DELETE FROM events WHERE id = ?", (event_id,))
+    execute("DELETE FROM team_avatar_selections WHERE event_id = ? ", (event_id,))
+    execute("DELETE FROM event_results WHERE event_id = ? ", (event_id,))
+    execute("DELETE FROM event_result_points WHERE event_id = ? ", (event_id,))
+    execute("DELETE FROM team_name_proposals WHERE event_id = ? ", (event_id,))
+    execute("DELETE FROM event_extra_votes WHERE event_id = ? ", (event_id,))
+    execute("DELETE FROM event_disciplines WHERE event_id = ? ", (event_id,))
+    execute("DELETE FROM registrations WHERE event_id = ? ", (event_id,))
+    execute("DELETE FROM events WHERE id = ? ", (event_id,))
 
 
 def event_has_started_or_closed(event_row):
@@ -1710,10 +1829,8 @@ def get_active_registration_count(event_id):
         """
         SELECT COUNT(*) AS cnt
         FROM registrations
-        WHERE event_id = ?
-          AND is_deleted = 0
-          AND payment_status != ?
-        """,
+        WHERE event_id = ? AND is_deleted = 0
+          AND payment_status != ? """,
         (event_id, PAYMENT_INVALID),
     )
     return row["cnt"] if row else 0
@@ -1724,8 +1841,7 @@ def get_registration_count(event_id):
         """
         SELECT COUNT(*) AS cnt
         FROM registrations
-        WHERE event_id = ?
-          AND is_deleted = 0
+        WHERE event_id = ? AND is_deleted = 0
         """,
         (event_id,),
     )
@@ -1740,7 +1856,7 @@ def payment_label(status):
     mapping = {
         PAYMENT_PENDING: "Fizetésre vár",
         PAYMENT_PAID: "Befizetve",
-        PAYMENT_INVALID: "Érvénytelen",
+        PAYMENT_INVALID: "Á‰rvénytelen",
     }
     return mapping.get(status, status)
 
@@ -1754,8 +1870,29 @@ def payment_method_label(method):
     return mapping.get(method, method)
 
 
+def team_pairing_mode_label(mode):
+    mapping = {
+        TEAM_PAIRING_MIXED: "Fix és véletlenszerű csapatelosztás",
+        TEAM_PAIRING_MIXED_CONFIRM: "Fix (visszaigazolós) és véletlenszerű csapatelosztás",
+        TEAM_PAIRING_FIXED_ONLY: "Fix csapatelosztás",
+        TEAM_PAIRING_RANDOM_ONLY: "Véletlenszerű csapatelosztás",
+    }
+    return mapping.get(mode, mapping[TEAM_PAIRING_MIXED])
+
+
+def normalize_event_team_pairing_mode(value):
+    raw = (value or "").strip()
+    allowed = {TEAM_PAIRING_MIXED, TEAM_PAIRING_MIXED_CONFIRM, TEAM_PAIRING_FIXED_ONLY, TEAM_PAIRING_RANDOM_ONLY}
+    return raw if raw in allowed else TEAM_PAIRING_MIXED
+
+
+def normalize_registration_teammate_preference(value):
+    raw = (value or "").strip()
+    return raw if raw in (TEAM_PREF_RANDOM, TEAM_PREF_FIXED) else TEAM_PREF_RANDOM
+
+
 def get_registration_by_id(registration_id):
-    return query_one("SELECT * FROM registrations WHERE id = ?", (registration_id,))
+    return query_one("SELECT * FROM registrations WHERE id = ? ", (registration_id,))
 
 
 def get_session_registration_id(event_id):
@@ -1785,8 +1922,7 @@ def get_registration_by_email(event_id, email):
         """
         SELECT *
         FROM registrations
-        WHERE event_id = ?
-          AND lower(participant_email) = lower(?)
+        WHERE event_id = ? AND lower(participant_email) = lower(?)
           AND is_deleted = 0
         ORDER BY id DESC LIMIT 1
         """,
@@ -1799,11 +1935,8 @@ def get_team_members(event_id, team_number):
         """
         SELECT *
         FROM registrations
-        WHERE event_id = ?
-          AND assigned_team = ?
-          AND is_deleted = 0
-          AND payment_status != ?
-        ORDER BY assigned_slot ASC, id ASC
+        WHERE event_id = ? AND assigned_team = ? AND is_deleted = 0
+          AND payment_status != ? ORDER BY assigned_slot ASC, id ASC
         """,
         (event_id, team_number, PAYMENT_INVALID),
     )
@@ -1814,13 +1947,22 @@ def get_unassigned_members(event_id):
         """
         SELECT *
         FROM registrations
-        WHERE event_id = ?
-          AND assigned_team IS NULL
+        WHERE event_id = ? AND assigned_team IS NULL
           AND is_deleted = 0
-          AND payment_status != ?
-        ORDER BY id ASC
+          AND payment_status != ? ORDER BY id ASC
         """,
         (event_id, PAYMENT_INVALID),
+    )
+
+
+def detach_fixed_partner_links(removed_registration_id):
+    execute(
+        """
+        UPDATE registrations
+        SET fixed_partner_registration_id = NULL,
+            fixed_partner_approved_by_admin = 0
+        WHERE fixed_partner_registration_id = ? """,
+        (removed_registration_id,),
     )
 
 
@@ -1829,11 +1971,8 @@ def get_current_team_size(event_id, team_number):
         """
         SELECT COUNT(*) AS cnt
         FROM registrations
-        WHERE event_id = ?
-          AND assigned_team = ?
-          AND is_deleted = 0
-          AND payment_status != ?
-        """,
+        WHERE event_id = ? AND assigned_team = ? AND is_deleted = 0
+          AND payment_status != ? """,
         (event_id, team_number, PAYMENT_INVALID),
     )
     return row["cnt"] if row else 0
@@ -1850,12 +1989,10 @@ def get_team_target_size(event_id, team_number):
         """
         SELECT COUNT(*) AS cnt
         FROM registrations
-        WHERE event_id = ?
-          AND pending_stage = 3
+        WHERE event_id = ? AND pending_stage = 3
           AND assigned_team IS NULL
           AND is_deleted = 0
-          AND payment_status != ?
-        """,
+          AND payment_status != ? """,
         (event_id, PAYMENT_INVALID),
     )["cnt"]
 
@@ -1896,9 +2033,7 @@ def get_approved_team_name(event_id, team_number):
         """
         SELECT *
         FROM team_name_proposals
-        WHERE event_id = ?
-          AND team_number = ?
-          AND status = 'approved'
+        WHERE event_id = ? AND team_number = ? AND status = 'approved'
         ORDER BY id DESC
         LIMIT 1
         """,
@@ -1912,9 +2047,7 @@ def get_pending_team_name_proposal(event_id, team_number):
         """
         SELECT *
         FROM team_name_proposals
-        WHERE event_id = ?
-          AND team_number = ?
-          AND status = 'pending'
+        WHERE event_id = ? AND team_number = ? AND status = 'pending'
         ORDER BY id DESC
         LIMIT 1
         """,
@@ -1931,9 +2064,7 @@ def get_visible_team_name_proposal(event_id, team_number):
         """
         SELECT *
         FROM team_name_proposals
-        WHERE event_id = ?
-          AND team_number = ?
-          AND status = 'approved'
+        WHERE event_id = ? AND team_number = ? AND status = 'approved'
         ORDER BY id DESC
         LIMIT 1
         """,
@@ -1946,8 +2077,7 @@ def get_votes_for_proposal(proposal_id):
         """
         SELECT *
         FROM team_name_votes
-        WHERE proposal_id = ?
-        ORDER BY id ASC
+        WHERE proposal_id = ? ORDER BY id ASC
         """,
         (proposal_id,),
     )
@@ -1964,7 +2094,7 @@ def create_or_replace_team_name_proposal(event_id, team_number, registration_id,
     old_pending = get_pending_team_name_proposal(event_id, team_number)
     if old_pending:
         execute(
-            "UPDATE team_name_proposals SET status = 'rejected', finalized_at = ? WHERE id = ?",
+            "UPDATE team_name_proposals SET status = 'rejected', finalized_at = ? WHERE id = ? ",
             (now_str(), old_pending["id"]),
         )
 
@@ -1973,7 +2103,7 @@ def create_or_replace_team_name_proposal(event_id, team_number, registration_id,
         INSERT INTO team_name_proposals (
             event_id, team_number, proposed_name, proposed_by_registration_id, status, created_at, is_admin_override
         )
-        VALUES (?, ?, ?, ?, 'pending', ?, ?)
+        VALUES ( ?, ?, ?, ?, 'pending', ?, ?)
         """,
         (event_id, team_number, proposed_name, registration_id, now_str(), is_admin_override),
     )
@@ -1982,7 +2112,7 @@ def create_or_replace_team_name_proposal(event_id, team_number, registration_id,
     execute(
         """
         INSERT INTO team_name_votes (proposal_id, registration_id, vote, created_at)
-        VALUES (?, ?, 'approve', ?)
+        VALUES ( ?, ?, 'approve', ?)
         ON CONFLICT(proposal_id, registration_id)
         DO UPDATE SET vote = excluded.vote, created_at = excluded.created_at
         """,
@@ -2004,7 +2134,7 @@ def activate_stored_team_name_idea(registration_id):
 
     existing = get_visible_team_name_proposal(reg["event_id"], reg["assigned_team"])
     if existing:
-        execute("UPDATE registrations SET pending_team_name_idea = NULL WHERE id = ?", (registration_id,))
+        execute("UPDATE registrations SET pending_team_name_idea = NULL WHERE id = ? ", (registration_id,))
         return
 
     try:
@@ -2015,7 +2145,7 @@ def activate_stored_team_name_idea(registration_id):
             idea,
         )
     finally:
-        execute("UPDATE registrations SET pending_team_name_idea = NULL WHERE id = ?", (registration_id,))
+        execute("UPDATE registrations SET pending_team_name_idea = NULL WHERE id = ? ", (registration_id,))
 
 
 def activate_stored_team_avatar_idea(registration_id):
@@ -2037,7 +2167,7 @@ def activate_stored_team_avatar_idea(registration_id):
                 registration_id,
             )
     finally:
-        execute("UPDATE registrations SET pending_team_avatar_idea = NULL WHERE id = ?", (registration_id,))
+        execute("UPDATE registrations SET pending_team_avatar_idea = NULL WHERE id = ? ", (registration_id,))
 
 
 def build_team_name_state(event_id, team_number):
@@ -2080,6 +2210,10 @@ def get_my_status(event_id):
         "payment_method_label": payment_method_label(reg["payment_method"]),
         "event_identifier": get_event_identifier(event_id),
         "event": event_row,
+        "teammate_preference": normalize_registration_teammate_preference(
+            reg["teammate_preference"] if "teammate_preference" in reg.keys() else TEAM_PREF_RANDOM
+        ),
+        "can_switch_to_random": False,
     }
 
     if reg["payment_status"] == PAYMENT_INVALID:
@@ -2109,6 +2243,12 @@ def get_my_status(event_id):
         status["pending_proposal"] = pending_proposal
         status["can_propose_team_name"] = not event_has_started_or_closed(event_row)
         status["team_avatar"] = team_avatar
+        status["can_switch_to_random"] = (
+            not event_has_started_or_closed(event_row)
+            and status["teammate_preference"] == TEAM_PREF_FIXED
+            and len(team_members) == 1
+            and not reg["fixed_partner_registration_id"]
+        )
         return status
 
     if reg["pending_stage"] == 3:
@@ -2129,9 +2269,11 @@ def get_my_status(event_id):
 
 
 def build_public_teams(event_id):
+    event_row = get_event(event_id)
+    event_closed = bool(event_row and event_row["is_closed"] == 1)
     teams = []
     for team_number in range(1, MAX_TEAMS + 1):
-        members = get_team_members(event_id, team_number)
+        members = get_team_members_with_approved_virtual_partner(event_id, team_number)
         count = len(members)
 
         if count == 0:
@@ -2149,6 +2291,8 @@ def build_public_teams(event_id):
         team_avatar = get_team_avatar_selection(event_id, team_number)
 
         visible_names = []
+        single_waiting_message = ""
+        show_single_member_name = False
         # a specifikáció szerint:
         # 1/2 -> név rejtett
         # 2/2 -> látszik
@@ -2158,6 +2302,23 @@ def build_public_teams(event_id):
         # 4/4 -> látszik
         if count >= 2:
             visible_names = [m["participant_name"] for m in members]
+        elif count == 1:
+            member = members[0]
+            is_fixed_waiting = (
+                member["teammate_preference"] == TEAM_PREF_FIXED
+                and not member["fixed_partner_registration_id"]
+            )
+            if is_fixed_waiting:
+                show_single_member_name = True
+                visible_names = [member["participant_name"]]
+                partner_name = (member["fixed_partner_name"] or "").strip()
+                if partner_name:
+                    if event_closed:
+                        single_waiting_message = f"{partner_name} automatikusan visszaigazoltnak tekintve."
+                    else:
+                        single_waiting_message = f"{partner_name} visszajelzését várjuk."
+                else:
+                    single_waiting_message = "Fix csapattárs visszajelzését várjuk."
 
         teams.append(
             {
@@ -2169,6 +2330,8 @@ def build_public_teams(event_id):
                 "team_name_state": team_name_state,
                 "members": members,
                 "team_avatar": team_avatar,
+                "show_single_member_name": show_single_member_name,
+                "single_waiting_message": single_waiting_message,
             }
         )
     return teams
@@ -2177,21 +2340,183 @@ def build_public_teams(event_id):
 # --------------------------------------------------
 # Assignment logic
 # --------------------------------------------------
-def assign_initial_if_needed(event_id, registration_id):
-    total = get_active_registration_count(event_id)
-    if total <= 10:
-        index = total - 1
-        team_number = (index // 2) + 1
-        assigned_slot = (index % 2) + 1
-        execute(
-            """
-            UPDATE registrations
-            SET assigned_team = ?, assigned_stage = 2, assigned_slot = ?,
-                pending_stage = NULL, pending_position = NULL, removed_from_team = 0
-            WHERE id = ?
-            """,
-            (team_number, assigned_slot, registration_id),
+def assign_to_stage2_team(registration_id, team_number, slot):
+    execute(
+        """
+        UPDATE registrations
+        SET assigned_team = ? , assigned_stage = 2, assigned_slot = ? ,
+            pending_stage = NULL, pending_position = NULL, removed_from_team = 0
+        WHERE id = ? """,
+        (team_number, slot, registration_id),
+    )
+
+
+def get_stage2_team_members(event_id, team_number):
+    return query_all(
+        """
+        SELECT *
+        FROM registrations
+        WHERE event_id = ? AND assigned_team = ? AND assigned_stage = 2
+          AND is_deleted = 0
+          AND payment_status != ? ORDER BY assigned_slot ASC, id ASC
+        """,
+        (event_id, team_number, PAYMENT_INVALID),
+    )
+
+
+def get_team_members_with_approved_virtual_partner(event_id, team_number):
+    real_members = [dict(row) for row in get_team_members(event_id, team_number)]
+    if len(real_members) != 1:
+        return real_members
+
+    only_member = real_members[0]
+    partner_name = (only_member.get("fixed_partner_name") or "").strip()
+    partner_approved = int(only_member.get("fixed_partner_approved_by_admin") or 0) == 1
+    is_fixed_waiting = (
+        only_member.get("teammate_preference") == TEAM_PREF_FIXED
+        and not only_member.get("fixed_partner_registration_id")
+    )
+    if not (is_fixed_waiting and partner_approved and partner_name):
+        return real_members
+
+    event = get_event(event_id)
+    virtual_payment_status = PAYMENT_PENDING if event and int(event.get("has_fee") or 0) == 1 else PAYMENT_PAID
+
+    virtual_member = {
+        "id": None,
+        "event_id": event_id,
+        "participant_name": partner_name,
+        "participant_email": "Szervező által jóváhagyott fix csapattárs",
+        "payment_status": virtual_payment_status,
+        "payment_method": PAYMENT_METHOD_NONE,
+        "payment_note": "",
+        "is_virtual_partner": True,
+    }
+    real_members.append(virtual_member)
+    return real_members
+
+
+def get_fixed_waiting_candidates(event_id):
+    candidates = []
+    for team_number in range(1, MAX_TEAMS + 1):
+        members = get_stage2_team_members(event_id, team_number)
+        if len(members) != 1:
+            continue
+        member = members[0]
+        if member["teammate_preference"] != TEAM_PREF_FIXED:
+            continue
+        if member["fixed_partner_registration_id"]:
+            continue
+        if member["fixed_partner_approved_by_admin"] == 1:
+            continue
+        candidates.append(
+            {
+                "registration_id": member["id"],
+                "participant_name": member["participant_name"],
+                "team_number": team_number,
+                "fixed_partner_name": (member["fixed_partner_name"] or "").strip(),
+            }
         )
+    candidates.sort(key=lambda item: item["registration_id"])
+    return candidates
+
+
+def find_random_waiting_single(event_id, exclude_registration_id=None):
+    for team_number in range(1, MAX_TEAMS + 1):
+        members = get_stage2_team_members(event_id, team_number)
+        if len(members) != 1:
+            continue
+        member = members[0]
+        if exclude_registration_id and member["id"] == exclude_registration_id:
+            continue
+        if member["teammate_preference"] != TEAM_PREF_RANDOM:
+            continue
+        return member
+    return None
+
+
+def find_empty_stage2_team(event_id):
+    for team_number in range(1, MAX_TEAMS + 1):
+        members = get_stage2_team_members(event_id, team_number)
+        if not members:
+            return team_number
+    return None
+
+
+def assign_random_stage2(event_id, registration_id):
+    waiting = find_random_waiting_single(event_id)
+    if waiting:
+        assign_to_stage2_team(registration_id, waiting["assigned_team"], 2)
+        return
+
+    empty_team = find_empty_stage2_team(event_id)
+    if empty_team is None:
+        raise ValueError("Nincs szabad csapathely a véletlenszerű párosításhoz.")
+    assign_to_stage2_team(registration_id, empty_team, 1)
+
+
+def assign_fixed_stage2(event_id, registration_id, fixed_partner_registration_id=None):
+    if fixed_partner_registration_id:
+        partner = query_one(
+            """
+            SELECT *
+            FROM registrations
+            WHERE id = ? AND event_id = ? AND is_deleted = 0
+              AND payment_status != ? 
+            LIMIT 1
+            """,
+            (fixed_partner_registration_id, event_id, PAYMENT_INVALID),
+        )
+        if not partner:
+            raise ValueError("A választott fix csapattárs nem található.")
+        if partner["teammate_preference"] != TEAM_PREF_FIXED:
+            raise ValueError("A választott játékos nem fix csapattársra vár.")
+        if partner["fixed_partner_registration_id"]:
+            raise ValueError("A választott fix csapattárs már párosítva lett.")
+        if partner["assigned_team"] is None or partner["assigned_stage"] != 2:
+            raise ValueError("A választott fix csapattárs jelenleg nem párosítható.")
+
+        partner_team_members = get_stage2_team_members(event_id, partner["assigned_team"])
+        if len(partner_team_members) != 1 or partner_team_members[0]["id"] != partner["id"]:
+            raise ValueError("A választott fix csapattárs csapata már nem üres.")
+
+        assign_to_stage2_team(registration_id, partner["assigned_team"], 2)
+        current_reg = get_registration_by_id(registration_id)
+        execute(
+            "UPDATE registrations SET fixed_partner_registration_id = ? WHERE id = ? ",
+            (partner["id"], registration_id),
+        )
+        execute(
+            "UPDATE registrations SET fixed_partner_registration_id = ? , fixed_partner_name = ? , fixed_partner_approved_by_admin = 0 WHERE id = ? ",
+            (registration_id, (current_reg["participant_name"] if current_reg else ""), partner["id"]),
+        )
+        execute(
+            "UPDATE registrations SET fixed_partner_approved_by_admin = 0 WHERE id = ? ",
+            (registration_id,),
+        )
+        return
+
+    empty_team = find_empty_stage2_team(event_id)
+    if empty_team is None:
+        raise ValueError(
+            "Nincs új üres csapat fix várakozáshoz. Válassz a fixen várók közül, vagy állj véletlenszerűre."
+        )
+    assign_to_stage2_team(registration_id, empty_team, 1)
+
+
+def try_pair_switched_random_registration(event_id, registration_id):
+    reg = get_registration_by_id(registration_id)
+    if not reg or reg["event_id"] != event_id or reg["assigned_stage"] != 2 or reg["assigned_team"] is None:
+        return
+
+    my_team_members = get_stage2_team_members(event_id, reg["assigned_team"])
+    if len(my_team_members) != 1:
+        return
+
+    waiting = find_random_waiting_single(event_id, exclude_registration_id=registration_id)
+    if not waiting:
+        return
+    assign_to_stage2_team(registration_id, waiting["assigned_team"], 2)
 
 
 def queue_for_stage(event_id, registration_id, stage):
@@ -2199,21 +2524,17 @@ def queue_for_stage(event_id, registration_id, stage):
         """
         SELECT COUNT(*) AS cnt
         FROM registrations
-        WHERE event_id = ?
-          AND pending_stage = ?
-          AND assigned_team IS NULL
+        WHERE event_id = ? AND pending_stage = ? AND assigned_team IS NULL
           AND is_deleted = 0
-          AND payment_status != ?
-        """,
+          AND payment_status != ? """,
         (event_id, stage, PAYMENT_INVALID),
     )["cnt"]
 
     execute(
         """
         UPDATE registrations
-        SET pending_stage = ?, pending_position = ?
-        WHERE id = ?
-        """,
+        SET pending_stage = ? , pending_position = ? 
+        WHERE id = ? """,
         (stage, current_pending + 1, registration_id),
     )
 
@@ -2231,10 +2552,9 @@ def assign_pending_stage_full(event_id, stage):
         execute(
             """
             UPDATE registrations
-            SET assigned_team = ?, assigned_stage = ?, assigned_slot = ?,
+            SET assigned_team = ? , assigned_stage = ? , assigned_slot = ? ,
                 pending_stage = NULL, pending_position = NULL, removed_from_team = 0
-            WHERE id = ?
-            """,
+            WHERE id = ? """,
             (team_number, stage, slot, reg["id"]),
         )
         activate_stored_team_name_idea(reg["id"])
@@ -2246,12 +2566,9 @@ def get_pending_pool(event_id, stage):
         """
         SELECT *
         FROM registrations
-        WHERE event_id = ?
-          AND pending_stage = ?
-          AND assigned_team IS NULL
+        WHERE event_id = ? AND pending_stage = ? AND assigned_team IS NULL
           AND is_deleted = 0
-          AND payment_status != ?
-        ORDER BY pending_position, id
+          AND payment_status != ? ORDER BY pending_position, id
         """,
         (event_id, stage, PAYMENT_INVALID),
     )
@@ -2266,12 +2583,9 @@ def finalize_pending_stage_partial(event_id, stage):
         """
         SELECT DISTINCT assigned_team
         FROM registrations
-        WHERE event_id = ?
-          AND assigned_stage = ?
-          AND assigned_team IS NOT NULL
+        WHERE event_id = ? AND assigned_stage = ? AND assigned_team IS NOT NULL
           AND is_deleted = 0
-          AND payment_status != ?
-        """,
+          AND payment_status != ? """,
         (event_id, stage, PAYMENT_INVALID),
     )
     already_used = {row["assigned_team"] for row in assigned_stage_rows if row["assigned_team"] is not None}
@@ -2288,10 +2602,9 @@ def finalize_pending_stage_partial(event_id, stage):
         execute(
             """
             UPDATE registrations
-            SET assigned_team = ?, assigned_stage = ?, assigned_slot = ?,
+            SET assigned_team = ? , assigned_stage = ? , assigned_slot = ? ,
                 pending_stage = NULL, pending_position = NULL, removed_from_team = 0
-            WHERE id = ?
-            """,
+            WHERE id = ? """,
             (team_number, stage, slot, reg["id"]),
         )
         activate_stored_team_name_idea(reg["id"])
@@ -2307,7 +2620,11 @@ def register_participant(
     payment_method=None,
     team_name_idea=None,
     team_avatar_idea_id=None,
+    teammate_preference=TEAM_PREF_RANDOM,
+    fixed_partner_registration_id=None,
+    fixed_partner_name=None,
 ):
+    # stage-2 teammate preference handling
     event_row = get_event(event_id)
     if not event_row:
         raise ValueError("Az esemény nem található.")
@@ -2319,6 +2636,21 @@ def register_participant(
     if current_count >= MAX_PLAYERS:
         raise ValueError("A jelentkezés lezárult, a maximum 20 fő betelt.")
 
+    teammate_preference = normalize_registration_teammate_preference(teammate_preference)
+    event_pairing_mode = normalize_event_team_pairing_mode(
+        event_row["team_pairing_mode"] if "team_pairing_mode" in event_row.keys() else TEAM_PAIRING_MIXED
+    )
+    if provider != "manual":
+        if event_pairing_mode == TEAM_PAIRING_FIXED_ONLY and teammate_preference != TEAM_PREF_FIXED:
+            raise ValueError("Ehhez az eseményhez csak fix csapattárssal lehet jelentkezni.")
+        if event_pairing_mode == TEAM_PAIRING_RANDOM_ONLY and teammate_preference != TEAM_PREF_RANDOM:
+            raise ValueError("Ehhez az eseményhez csak véletlenszerű csapattárssal lehet jelentkezni.")
+    else:
+        teammate_preference = TEAM_PREF_RANDOM
+
+    if teammate_preference == TEAM_PREF_FIXED and current_count >= 10:
+        raise ValueError("Fix csapattárs mód csak az első 10 jelentkezőnél használható.")
+
     if event_row["has_fee"] == 1:
         payment_status = PAYMENT_PENDING
         if payment_method not in (PAYMENT_METHOD_TRANSFER, PAYMENT_METHOD_CASH):
@@ -2326,18 +2658,28 @@ def register_participant(
     else:
         payment_status = PAYMENT_PAID
         payment_method = PAYMENT_METHOD_NONE
-
     avatar_idea_id = parse_avatar_id(team_avatar_idea_id)
     if avatar_idea_id and not avatar_exists(avatar_idea_id):
         raise ValueError("Érvénytelen avatar választás.")
+
+    fixed_partner_name = (fixed_partner_name or "").strip()
+    fixed_partner_approved_by_admin = 0
+    if (
+        teammate_preference == TEAM_PREF_FIXED
+        and event_pairing_mode == TEAM_PAIRING_MIXED
+        and not fixed_partner_registration_id
+        and fixed_partner_name
+    ):
+        fixed_partner_approved_by_admin = 1
 
     cur = execute(
         """
         INSERT INTO registrations (
             event_id, participant_name, participant_email, provider, google_sub, created_at,
-            payment_status, payment_method, payment_note, pending_team_name_idea, pending_team_avatar_idea
+            payment_status, payment_method, payment_note, pending_team_name_idea, pending_team_avatar_idea,
+            teammate_preference, fixed_partner_registration_id, fixed_partner_name, fixed_partner_approved_by_admin
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             event_id,
@@ -2351,24 +2693,39 @@ def register_participant(
             "",
             normalize_team_name(team_name_idea or ""),
             avatar_idea_id,
+            teammate_preference,
+            fixed_partner_registration_id,
+            fixed_partner_name,
+            fixed_partner_approved_by_admin,
         ),
     )
     registration_id = cur.lastrowid
 
     total_after_insert = get_active_registration_count(event_id)
 
-    if total_after_insert <= 10:
-        assign_initial_if_needed(event_id, registration_id)
-        activate_stored_team_name_idea(registration_id)
-        activate_stored_team_avatar_idea(registration_id)
-    elif 11 <= total_after_insert <= 15:
-        queue_for_stage(event_id, registration_id, 3)
-        if total_after_insert == 15:
-            assign_pending_stage_full(event_id, 3)
-    elif 16 <= total_after_insert <= 20:
-        queue_for_stage(event_id, registration_id, 4)
-        if total_after_insert == 20:
-            assign_pending_stage_full(event_id, 4)
+    try:
+        if total_after_insert <= 10:
+            if teammate_preference == TEAM_PREF_FIXED:
+                assign_fixed_stage2(
+                    event_id,
+                    registration_id,
+                    fixed_partner_registration_id=fixed_partner_registration_id,
+                )
+            else:
+                assign_random_stage2(event_id, registration_id)
+            activate_stored_team_name_idea(registration_id)
+            activate_stored_team_avatar_idea(registration_id)
+        elif 11 <= total_after_insert <= 15:
+            queue_for_stage(event_id, registration_id, 3)
+            if total_after_insert == 15:
+                assign_pending_stage_full(event_id, 3)
+        elif 16 <= total_after_insert <= 20:
+            queue_for_stage(event_id, registration_id, 4)
+            if total_after_insert == 20:
+                assign_pending_stage_full(event_id, 4)
+    except ValueError:
+        execute("DELETE FROM registrations WHERE id = ? ", (registration_id,))
+        raise
 
     return registration_id
 
@@ -2378,9 +2735,7 @@ def remove_invalid_from_teams(event_id):
         """
         SELECT id
         FROM registrations
-        WHERE event_id = ?
-          AND payment_status = ?
-          AND is_deleted = 0
+        WHERE event_id = ? AND payment_status = ? AND is_deleted = 0
         """,
         (event_id, PAYMENT_INVALID),
     )
@@ -2394,8 +2749,7 @@ def remove_invalid_from_teams(event_id):
                 pending_stage = NULL,
                 pending_position = NULL,
                 removed_from_team = 1
-            WHERE id = ?
-            """,
+            WHERE id = ? """,
             (reg["id"],),
         )
 
@@ -2417,10 +2771,8 @@ def finalize_event_if_needed(event_row):
         execute(
             """
             UPDATE registrations
-            SET payment_status = ?
-            WHERE event_id = ?
-              AND payment_status = ?
-              AND is_deleted = 0
+            SET payment_status = ? 
+            WHERE event_id = ? AND payment_status = ? AND is_deleted = 0
             """,
             (PAYMENT_INVALID, event_id, PAYMENT_PENDING),
         )
@@ -2434,9 +2786,8 @@ def finalize_event_if_needed(event_row):
         """
         UPDATE events
         SET is_closed = 1,
-            finalized_at = ?
-        WHERE id = ?
-        """,
+            finalized_at = ? 
+        WHERE id = ? """,
         (now_str(), event_id),
     )
 
@@ -2461,8 +2812,7 @@ def build_event_stats(event_id):
             SELECT COUNT(*) AS cnt
             FROM registrations
             WHERE event_id = ? AND pending_stage = 3 AND assigned_team IS NULL
-              AND is_deleted = 0 AND payment_status != ?
-            """,
+              AND is_deleted = 0 AND payment_status != ? """,
             (event_id, PAYMENT_INVALID),
         )["cnt"],
         "stage4_pending_count": query_one(
@@ -2470,8 +2820,7 @@ def build_event_stats(event_id):
             SELECT COUNT(*) AS cnt
             FROM registrations
             WHERE event_id = ? AND pending_stage = 4 AND assigned_team IS NULL
-              AND is_deleted = 0 AND payment_status != ?
-            """,
+              AND is_deleted = 0 AND payment_status != ? """,
             (event_id, PAYMENT_INVALID),
         )["cnt"],
     }
@@ -2482,8 +2831,7 @@ def get_event_results(event_id):
         """
         SELECT id, event_id, team_number, placement, points, note, image_path, created_at, updated_at
         FROM event_results
-        WHERE event_id = ?
-        ORDER BY placement ASC, team_number ASC
+        WHERE event_id = ? ORDER BY placement ASC, team_number ASC
         """,
         (event_id,),
     )
@@ -2500,8 +2848,7 @@ def get_event_result_points(event_id):
         SELECT rp.event_id, rp.team_number, rp.discipline_id, rp.points, d.name AS discipline_name
         FROM event_result_points rp
         JOIN disciplines d ON d.id = rp.discipline_id
-        WHERE rp.event_id = ?
-        ORDER BY rp.team_number ASC, d.name ASC
+        WHERE rp.event_id = ? ORDER BY rp.team_number ASC, d.name ASC
         """,
         (event_id,),
     )
@@ -2648,6 +2995,9 @@ def build_public_event_view(event_row):
         and datetime.now() >= parse_dt(event_row["event_at"])
         and not data["has_results"]
     )
+    data["team_pairing_mode"] = normalize_event_team_pairing_mode(
+        event_row["team_pairing_mode"] if "team_pairing_mode" in event_row.keys() else TEAM_PAIRING_MIXED
+    )
     data["fixed_disciplines"] = get_event_fixed_disciplines(event_row["id"])
     data["extra_discipline_options"] = get_event_extra_discipline_options(event_row["id"])
     return data
@@ -2657,14 +3007,14 @@ def build_public_event_view(event_row):
 # Team name logic
 # --------------------------------------------------
 def evaluate_team_name_proposal(proposal_id):
-    proposal = query_one("SELECT * FROM team_name_proposals WHERE id = ?", (proposal_id,))
+    proposal = query_one("SELECT * FROM team_name_proposals WHERE id = ? ", (proposal_id,))
     if not proposal or proposal["status"] != "pending":
         return
 
     if proposal["is_admin_override"] == 1:
         if team_name_exists(proposal["event_id"], proposal["team_number"], proposal["proposed_name"]):
             execute(
-                "UPDATE team_name_proposals SET status = 'rejected', finalized_at = ? WHERE id = ?",
+                "UPDATE team_name_proposals SET status = 'rejected', finalized_at = ? WHERE id = ? ",
                 (now_str(), proposal_id),
             )
             return
@@ -2672,15 +3022,13 @@ def evaluate_team_name_proposal(proposal_id):
         execute(
             """
             UPDATE team_name_proposals
-            SET status = 'rejected', finalized_at = ?
-            WHERE event_id = ?
-              AND team_number = ?
-              AND status = 'approved'
+            SET status = 'rejected', finalized_at = ? 
+            WHERE event_id = ? AND team_number = ? AND status = 'approved'
             """,
             (now_str(), proposal["event_id"], proposal["team_number"]),
         )
         execute(
-            "UPDATE team_name_proposals SET status = 'approved', finalized_at = ? WHERE id = ?",
+            "UPDATE team_name_proposals SET status = 'approved', finalized_at = ? WHERE id = ? ",
             (now_str(), proposal_id),
         )
         return
@@ -2695,7 +3043,7 @@ def evaluate_team_name_proposal(proposal_id):
     if approvals >= required:
         if team_name_exists(proposal["event_id"], proposal["team_number"], proposal["proposed_name"]):
             execute(
-                "UPDATE team_name_proposals SET status = 'rejected', finalized_at = ? WHERE id = ?",
+                "UPDATE team_name_proposals SET status = 'rejected', finalized_at = ? WHERE id = ? ",
                 (now_str(), proposal_id),
             )
             return
@@ -2703,16 +3051,14 @@ def evaluate_team_name_proposal(proposal_id):
         execute(
             """
             UPDATE team_name_proposals
-            SET status = 'rejected', finalized_at = ?
-            WHERE event_id = ?
-              AND team_number = ?
-              AND status = 'approved'
+            SET status = 'rejected', finalized_at = ? 
+            WHERE event_id = ? AND team_number = ? AND status = 'approved'
             """,
             (now_str(), proposal["event_id"], proposal["team_number"]),
         )
 
         execute(
-            "UPDATE team_name_proposals SET status = 'approved', finalized_at = ? WHERE id = ?",
+            "UPDATE team_name_proposals SET status = 'approved', finalized_at = ? WHERE id = ? ",
             (now_str(), proposal_id),
         )
 
@@ -2726,15 +3072,13 @@ def finalize_team_names_for_event(event_id):
         execute(
             """
             UPDATE team_name_proposals
-            SET status = 'rejected', finalized_at = ?
-            WHERE event_id = ?
-              AND team_number = ?
-              AND status = 'approved'
+            SET status = 'rejected', finalized_at = ? 
+            WHERE event_id = ? AND team_number = ? AND status = 'approved'
             """,
             (now_str(), event_id, team_number),
         )
         execute(
-            "UPDATE team_name_proposals SET status = 'approved', finalized_at = ? WHERE id = ?",
+            "UPDATE team_name_proposals SET status = 'approved', finalized_at = ? WHERE id = ? ",
             (now_str(), pending["id"]),
         )
 
@@ -2779,12 +3123,10 @@ def event_home(slug):
         """
         SELECT COUNT(*) AS cnt
         FROM registrations
-        WHERE event_id = ?
-          AND pending_stage = 3
+        WHERE event_id = ? AND pending_stage = 3
           AND assigned_team IS NULL
           AND is_deleted = 0
-          AND payment_status != ?
-        """,
+          AND payment_status != ? """,
         (event_row["id"], PAYMENT_INVALID),
     )["cnt"]
 
@@ -2792,12 +3134,10 @@ def event_home(slug):
         """
         SELECT COUNT(*) AS cnt
         FROM registrations
-        WHERE event_id = ?
-          AND pending_stage = 4
+        WHERE event_id = ? AND pending_stage = 4
           AND assigned_team IS NULL
           AND is_deleted = 0
-          AND payment_status != ?
-        """,
+          AND payment_status != ? """,
         (event_row["id"], PAYMENT_INVALID),
     )["cnt"]
 
@@ -2812,6 +3152,7 @@ def event_home(slug):
         )
 
     my_registration_id = my_status["registration"]["id"] if my_status else None
+    fixed_waiting_candidates = get_fixed_waiting_candidates(event_row["id"])
     my_extra_vote = get_event_extra_vote(event_row["id"], my_registration_id)
     extra_vote_summary = (
         get_event_extra_vote_summary(event_row["id"])
@@ -2856,6 +3197,14 @@ def event_home(slug):
         can_vote_extra=can_vote_extra,
         can_choose_avatar=can_choose_avatar,
         all_team_avatars=all_team_avatars,
+        fixed_waiting_candidates=fixed_waiting_candidates,
+        team_pairing_mode=event_view["team_pairing_mode"],
+        team_pref_random=TEAM_PREF_RANDOM,
+        team_pref_fixed=TEAM_PREF_FIXED,
+        team_pairing_mixed=TEAM_PAIRING_MIXED,
+        team_pairing_mixed_confirm=TEAM_PAIRING_MIXED_CONFIRM,
+        team_pairing_fixed_only=TEAM_PAIRING_FIXED_ONLY,
+        team_pairing_random_only=TEAM_PAIRING_RANDOM_ONLY,
     )
 
 
@@ -2871,13 +3220,22 @@ def register_email(slug):
     payment_method = request.form.get("payment_method", "").strip()
     team_name_idea = request.form.get("team_name_idea", "").strip()
     team_avatar_idea_id = parse_avatar_id(request.form.get("team_avatar_idea_id"))
+    teammate_preference = normalize_registration_teammate_preference(
+        request.form.get("teammate_preference", TEAM_PREF_RANDOM)
+    )
+    fixed_partner_registration_id = request.form.get("fixed_partner_registration_id", type=int)
+    fixed_partner_name = request.form.get("fixed_partner_name", "").strip()
 
     if not name or not email:
         flash("A név és az email megadása kötelező.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     if "@" not in email:
-        flash("Érvénytelen email cím.", "error")
+        flash("Á‰rvénytelen email cím.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    if teammate_preference == TEAM_PREF_FIXED and not fixed_partner_registration_id and not fixed_partner_name:
+        flash("Fix csapattárs módban adj meg egy nevet, vagy válassz a várakozók közül.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     existing = get_registration_by_email(event_row["id"], email)
@@ -2895,12 +3253,60 @@ def register_email(slug):
             payment_method=payment_method,
             team_name_idea=team_name_idea,
             team_avatar_idea_id=team_avatar_idea_id,
+            teammate_preference=teammate_preference,
+            fixed_partner_registration_id=fixed_partner_registration_id,
+            fixed_partner_name=fixed_partner_name,
         )
         set_session_registration_id(event_row["id"], registration_id)
         flash("Sikeres jelentkezés.", "success")
     except ValueError as e:
         flash(str(e), "error")
 
+    return redirect(url_for("event_home", slug=slug))
+
+
+@app.route("/e/<slug>/team-preference/random", methods=["POST"])
+def switch_to_random_teammate(slug):
+    event_row = get_event_by_slug(slug)
+    if not event_row:
+        flash("Az esemény nem található.", "error")
+        return redirect(url_for("home"))
+
+    finalize_event_if_needed(event_row)
+    event_row = get_event(event_row["id"])
+    if event_has_started_or_closed(event_row):
+        flash("A csapatbeállítás már nem módosítható.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    registration_id = get_session_registration_id(event_row["id"])
+    if not registration_id:
+        flash("Ehhez előbb jelentkezned kell.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    reg = get_registration_by_id(registration_id)
+    if not reg or reg["event_id"] != event_row["id"] or reg["is_deleted"] == 1:
+        flash("A jelentkezésed nem található.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    if reg["assigned_team"] is None or reg["assigned_stage"] != 2:
+        flash("Ez a beállítás most nem módosítható.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
+    team_members = get_stage2_team_members(event_row["id"], reg["assigned_team"])
+    if len(team_members) != 1:
+        flash("A csapat már teljes, ezért ez a beállítás nem módosítható.", "info")
+        return redirect(url_for("event_home", slug=slug))
+
+    execute(
+        """
+        UPDATE registrations
+        SET teammate_preference = ? , fixed_partner_registration_id = NULL, fixed_partner_name = NULL,
+            fixed_partner_approved_by_admin = 0
+        WHERE id = ? """,
+        (TEAM_PREF_RANDOM, registration_id),
+    )
+    try_pair_switched_random_registration(event_row["id"], registration_id)
+    flash("Átállítottunk véletlenszerű csapattárs módra.", "success")
     return redirect(url_for("event_home", slug=slug))
 
 
@@ -2925,8 +3331,20 @@ def google_login(slug):
             return redirect(url_for("event_home", slug=slug))
         session[f"payment_method_{event_row['id']}"] = payment_method
 
+    teammate_preference = normalize_registration_teammate_preference(
+        request.args.get("teammate_preference", TEAM_PREF_RANDOM)
+    )
+    fixed_partner_name = request.args.get("fixed_partner_name", "").strip()
+    fixed_partner_registration_id = (request.args.get("fixed_partner_registration_id", "") or "").strip()
+    if teammate_preference == TEAM_PREF_FIXED and not fixed_partner_name and not fixed_partner_registration_id:
+        flash("Fix csapattárs módban adj meg egy nevet, vagy válassz a várakozók közül.", "error")
+        return redirect(url_for("event_home", slug=slug))
+
     session[f"team_name_idea_{event_row['id']}"] = request.args.get("team_name_idea", "").strip()
     session[f"team_avatar_idea_{event_row['id']}"] = request.args.get("team_avatar_idea_id", "").strip()
+    session[f"teammate_preference_{event_row['id']}"] = teammate_preference
+    session[f"fixed_partner_registration_id_{event_row['id']}"] = fixed_partner_registration_id
+    session[f"fixed_partner_name_{event_row['id']}"] = fixed_partner_name
 
     redirect_uri = url_for("google_callback", slug=slug, _external=True)
     return oauth.google.authorize_redirect(redirect_uri)
@@ -2971,6 +3389,16 @@ def google_callback(slug):
     payment_method = session.pop(f"payment_method_{event_row['id']}", None)
     team_name_idea = session.pop(f"team_name_idea_{event_row['id']}", "")
     team_avatar_idea_id = parse_avatar_id(session.pop(f"team_avatar_idea_{event_row['id']}", ""))
+    teammate_preference = normalize_registration_teammate_preference(
+        session.pop(f"teammate_preference_{event_row['id']}", TEAM_PREF_RANDOM)
+    )
+    try:
+        fixed_partner_registration_id = int(session.pop(f"fixed_partner_registration_id_{event_row['id']}", "") or 0)
+    except (TypeError, ValueError):
+        fixed_partner_registration_id = None
+    if fixed_partner_registration_id and fixed_partner_registration_id <= 0:
+        fixed_partner_registration_id = None
+    fixed_partner_name = session.pop(f"fixed_partner_name_{event_row['id']}", "")
 
     try:
         registration_id = register_participant(
@@ -2982,6 +3410,9 @@ def google_callback(slug):
             payment_method=payment_method,
             team_name_idea=team_name_idea,
             team_avatar_idea_id=team_avatar_idea_id,
+            teammate_preference=teammate_preference,
+            fixed_partner_registration_id=fixed_partner_registration_id,
+            fixed_partner_name=fixed_partner_name,
         )
         set_session_registration_id(event_row["id"], registration_id)
         flash("Sikeres Google-jelentkezés.", "success")
@@ -3099,21 +3530,19 @@ def vote_extra_discipline(slug):
         """
         SELECT ed.id
         FROM event_disciplines ed
-        WHERE ed.event_id = ?
-          AND ed.discipline_id = ?
-          AND ed.role = 'extra'
+        WHERE ed.event_id = ? AND ed.discipline_id = ? AND ed.role = 'extra'
         LIMIT 1
         """,
         (event_row["id"], discipline_id),
     )
     if not option:
-        flash("Érvénytelen extra versenyszám.", "error")
+        flash("Á‰rvénytelen extra versenyszám.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     execute(
         """
         INSERT INTO event_extra_votes (event_id, registration_id, discipline_id, created_at)
-        VALUES (?, ?, ?, ?)
+        VALUES ( ?, ?, ?, ?)
         ON CONFLICT(event_id, registration_id)
         DO UPDATE SET discipline_id = excluded.discipline_id, created_at = excluded.created_at
         """,
@@ -3138,10 +3567,10 @@ def vote_team_name(slug):
     proposal_id = request.form.get("proposal_id", type=int)
     vote = request.form.get("vote", "").strip().lower()
     if vote not in ("approve", "reject"):
-        flash("Érvénytelen szavazat.", "error")
+        flash("Á‰rvénytelen szavazat.", "error")
         return redirect(url_for("event_home", slug=slug))
 
-    proposal = query_one("SELECT * FROM team_name_proposals WHERE id = ?", (proposal_id,))
+    proposal = query_one("SELECT * FROM team_name_proposals WHERE id = ? ", (proposal_id,))
     if not proposal or proposal["status"] != "pending":
         flash("A javaslat már nem aktív.", "error")
         return redirect(url_for("event_home", slug=slug))
@@ -3154,7 +3583,7 @@ def vote_team_name(slug):
     execute(
         """
         INSERT INTO team_name_votes (proposal_id, registration_id, vote, created_at)
-        VALUES (?, ?, ?, ?)
+        VALUES ( ?, ?, ?, ?)
         ON CONFLICT(proposal_id, registration_id)
         DO UPDATE SET vote = excluded.vote, created_at = excluded.created_at
         """,
@@ -3241,7 +3670,7 @@ def admin_upload_avatar():
     execute(
         """
         INSERT INTO team_avatars (code, name, image_path, created_at)
-        VALUES (?, ?, ?, ?)
+        VALUES ( ?, ?, ?, ?)
         """,
         (code, avatar_name, image_path, now_str()),
     )
@@ -3252,17 +3681,17 @@ def admin_upload_avatar():
 @app.route("/admin/avatars/<int:avatar_id>/delete", methods=["POST"])
 @admin_required
 def admin_delete_avatar(avatar_id):
-    avatar = query_one("SELECT id, image_path FROM team_avatars WHERE id = ?", (avatar_id,))
+    avatar = query_one("SELECT id, image_path FROM team_avatars WHERE id = ? ", (avatar_id,))
     if not avatar:
         flash("Az avatár nem található.", "error")
         return redirect(url_for("admin_avatars"))
 
     execute(
-        "UPDATE registrations SET pending_team_avatar_idea = NULL WHERE pending_team_avatar_idea = ?",
+        "UPDATE registrations SET pending_team_avatar_idea = NULL WHERE pending_team_avatar_idea = ? ",
         (avatar_id,),
     )
-    execute("DELETE FROM team_avatar_selections WHERE avatar_id = ?", (avatar_id,))
-    execute("DELETE FROM team_avatars WHERE id = ?", (avatar_id,))
+    execute("DELETE FROM team_avatar_selections WHERE avatar_id = ? ", (avatar_id,))
+    execute("DELETE FROM team_avatars WHERE id = ? ", (avatar_id,))
 
     image_path = (avatar["image_path"] or "").strip()
     prefixes = [
@@ -3362,7 +3791,7 @@ def admin_event_results(event_id):
         try:
             team_number_int = int(team_number)
         except (TypeError, ValueError):
-            flash("Érvénytelen csapat az eredménylistában.", "error")
+            flash("Á‰rvénytelen csapat az eredménylistában.", "error")
             return redirect(url_for("admin_event_results", event_id=event_id))
 
         if len(get_team_members(event_id, team_number_int)) == 0:
@@ -3428,8 +3857,8 @@ def admin_event_results(event_id):
             previous_placement = index
         previous_total = row["total_points"]
 
-    execute("DELETE FROM event_results WHERE event_id = ?", (event_id,))
-    execute("DELETE FROM event_result_points WHERE event_id = ?", (event_id,))
+    execute("DELETE FROM event_results WHERE event_id = ? ", (event_id,))
+    execute("DELETE FROM event_result_points WHERE event_id = ? ", (event_id,))
 
     for row in rows_for_ranking:
         execute(
@@ -3437,7 +3866,7 @@ def admin_event_results(event_id):
             INSERT INTO event_results (
                 event_id, team_number, placement, points, note, image_path, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES ( ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event_id,
@@ -3456,7 +3885,7 @@ def admin_event_results(event_id):
                 INSERT INTO event_result_points (
                     event_id, team_number, discipline_id, points, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES ( ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event_id,
@@ -3469,7 +3898,7 @@ def admin_event_results(event_id):
             )
 
     execute(
-        "UPDATE events SET results_published_at = COALESCE(results_published_at, ?) WHERE id = ?",
+        "UPDATE events SET results_published_at = COALESCE(results_published_at, ?) WHERE id = ? ",
         (now_str(), event_id),
     )
 
@@ -3488,6 +3917,7 @@ def admin_new_event():
         fee_amount = request.form.get("fee_amount", type=int) or 0
         beneficiary_name = request.form.get("beneficiary_name", "").strip()
         bank_account = request.form.get("bank_account", "").strip()
+        team_pairing_mode = normalize_event_team_pairing_mode(request.form.get("team_pairing_mode"))
 
         if not event_date or not event_time:
             flash("Az esemény dátuma és időpontja kötelező.", "error")
@@ -3496,7 +3926,7 @@ def admin_new_event():
         try:
             event_at = parse_dt_input(event_date, event_time)
         except ValueError:
-            flash("Érvénytelen dátum vagy idő.", "error")
+            flash("Á‰rvénytelen dátum vagy idő.", "error")
             return redirect(url_for("admin_new_event"))
 
         try:
@@ -3518,9 +3948,9 @@ def admin_new_event():
             """
             INSERT INTO events (
                 title, slug, description, event_at, registration_deadline, created_at, is_closed,
-                has_fee, fee_amount, beneficiary_name, bank_account
+                has_fee, fee_amount, beneficiary_name, bank_account, team_pairing_mode
             )
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+            VALUES ( ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
             """,
             (
                 title,
@@ -3533,6 +3963,7 @@ def admin_new_event():
                 fee_amount,
                 beneficiary_name if has_fee else "",
                 bank_account if has_fee else "",
+                team_pairing_mode,
             ),
         )
         save_event_discipline_links(cur.lastrowid, fixed_ids, extra_ids)
@@ -3558,11 +3989,12 @@ def admin_edit_event(event_id):
         fee_amount = request.form.get("fee_amount", type=int) or 0
         beneficiary_name = request.form.get("beneficiary_name", "").strip()
         bank_account = request.form.get("bank_account", "").strip()
+        team_pairing_mode = normalize_event_team_pairing_mode(request.form.get("team_pairing_mode"))
 
         try:
             event_at = parse_dt_input(event_date, event_time)
         except ValueError:
-            flash("Érvénytelen dátum vagy idő.", "error")
+            flash("Á‰rvénytelen dátum vagy idő.", "error")
             return redirect(url_for("admin_edit_event", event_id=event_id))
 
         try:
@@ -3583,10 +4015,9 @@ def admin_edit_event(event_id):
         execute(
             """
             UPDATE events
-            SET title = ?, slug = ?, description = ?, event_at = ?, registration_deadline = ?,
-                has_fee = ?, fee_amount = ?, beneficiary_name = ?, bank_account = ?
-            WHERE id = ?
-            """,
+            SET title = ? , slug = ? , description = ? , event_at = ? , registration_deadline = ? ,
+                has_fee = ? , fee_amount = ? , beneficiary_name = ? , bank_account = ? , team_pairing_mode = ? 
+            WHERE id = ? """,
             (
                 title,
                 slug,
@@ -3597,6 +4028,7 @@ def admin_edit_event(event_id):
                 fee_amount,
                 beneficiary_name if has_fee else "",
                 bank_account if has_fee else "",
+                team_pairing_mode,
                 event_id,
             ),
         )
@@ -3642,10 +4074,8 @@ def admin_finalize_event(event_id):
         execute(
             """
             UPDATE registrations
-            SET payment_status = ?
-            WHERE event_id = ?
-              AND payment_status = ?
-              AND is_deleted = 0
+            SET payment_status = ? 
+            WHERE event_id = ? AND payment_status = ? AND is_deleted = 0
             """,
             (PAYMENT_INVALID, event_id, PAYMENT_PENDING),
         )
@@ -3656,9 +4086,8 @@ def admin_finalize_event(event_id):
     execute(
         """
         UPDATE events
-        SET is_closed = 1, finalized_at = ?
-        WHERE id = ?
-        """,
+        SET is_closed = 1, finalized_at = ? 
+        WHERE id = ? """,
         (now_str(), event_id),
     )
     flash("Az esemény jelentkezése lezárva és véglegesítve.", "success")
@@ -3675,11 +4104,12 @@ def admin_teams(event_id):
 
     teams = []
     for team_number in range(1, MAX_TEAMS + 1):
+        members = get_team_members_with_approved_virtual_partner(event_id, team_number)
         teams.append(
             {
                 "team_number": team_number,
                 "team_name": get_approved_team_name(event_id, team_number) or "",
-                "members": get_team_members(event_id, team_number),
+                "members": [dict(member) for member in members],
             }
         )
 
@@ -3749,7 +4179,7 @@ def admin_add_player(event_id):
         return redirect(url_for("admin_teams", event_id=event_id))
 
     if get_current_team_size(event_id, team_number) >= MAX_TEAM_SIZE and reg["assigned_team"] != team_number:
-        execute("UPDATE registrations SET is_manual = 1 WHERE id = ?", (registration_id,))
+        execute("UPDATE registrations SET is_manual = 1 WHERE id = ? ", (registration_id,))
         flash("A játékos hozzáadva, de a kiválasztott csapat tele van (max 4 fő).", "info")
         return redirect(url_for("admin_teams", event_id=event_id))
 
@@ -3757,16 +4187,15 @@ def admin_add_player(event_id):
     execute(
         """
         UPDATE registrations
-        SET assigned_team = ?, assigned_stage = ?, assigned_slot = ?,
+        SET assigned_team = ? , assigned_stage = ? , assigned_slot = ? ,
             pending_stage = NULL, pending_position = NULL,
             removed_from_team = 0, is_manual = 1
-        WHERE id = ?
-        """,
+        WHERE id = ? """,
         (team_number, max(2, slot), slot, registration_id),
     )
     activate_stored_team_name_idea(registration_id)
     activate_stored_team_avatar_idea(registration_id)
-    flash("Új játékos hozzáadva a csapathoz.", "success")
+    flash("Ášj játékos hozzáadva a csapathoz.", "success")
     return redirect(url_for("admin_teams", event_id=event_id))
 
 
@@ -3778,6 +4207,8 @@ def admin_remove_from_team(registration_id):
         flash("A játékos nem található.", "error")
         return redirect(url_for("admin_dashboard"))
 
+    detach_fixed_partner_links(registration_id)
+
     execute(
         """
         UPDATE registrations
@@ -3788,8 +4219,7 @@ def admin_remove_from_team(registration_id):
             pending_position = NULL,
             removed_from_team = 1,
             is_manual = 1
-        WHERE id = ?
-        """,
+        WHERE id = ? """,
         (registration_id,),
     )
     flash("A játékos kikerült a csapatból.", "success")
@@ -3804,6 +4234,8 @@ def admin_delete_player(registration_id):
         flash("A játékos nem található.", "error")
         return redirect(url_for("admin_dashboard"))
 
+    detach_fixed_partner_links(registration_id)
+
     execute(
         """
         UPDATE registrations
@@ -3813,11 +4245,47 @@ def admin_delete_player(registration_id):
             assigned_slot = NULL,
             pending_stage = NULL,
             pending_position = NULL
-        WHERE id = ?
-        """,
+        WHERE id = ? """,
         (registration_id,),
     )
     flash("A jelentkező végleg törölve.", "success")
+    return redirect(url_for("admin_teams", event_id=reg["event_id"]))
+
+
+@app.route("/admin/player/<int:registration_id>/approve-fixed-partner", methods=["POST"])
+@admin_required
+def admin_approve_fixed_partner(registration_id):
+    reg = get_registration_by_id(registration_id)
+    if not reg:
+        flash("A játékos nem található.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    if reg["assigned_team"] is None or reg["assigned_stage"] != 2:
+        flash("Ez a játékos jelenleg nem fix csapattárs-várakozó állapotban van.", "error")
+        return redirect(url_for("admin_teams", event_id=reg["event_id"]))
+
+    if reg["teammate_preference"] != TEAM_PREF_FIXED:
+        flash("A játékos nem fix csapattárs módot választott.", "error")
+        return redirect(url_for("admin_teams", event_id=reg["event_id"]))
+
+    if reg["fixed_partner_registration_id"]:
+        flash("A fix csapattárs már párosítva lett.", "info")
+        return redirect(url_for("admin_teams", event_id=reg["event_id"]))
+
+    if not (reg["fixed_partner_name"] or "").strip():
+        flash("Nincs megadott fix csapattárs név ehhez a jóváhagyáshoz.", "error")
+        return redirect(url_for("admin_teams", event_id=reg["event_id"]))
+
+    team_members = get_stage2_team_members(reg["event_id"], reg["assigned_team"])
+    if len(team_members) != 1 or team_members[0]["id"] != registration_id:
+        flash("A csapat állapota időközben megváltozott, nem jóváhagyható.", "error")
+        return redirect(url_for("admin_teams", event_id=reg["event_id"]))
+
+    execute(
+        "UPDATE registrations SET fixed_partner_approved_by_admin = 1 WHERE id = ? ",
+        (registration_id,),
+    )
+    flash("A fix csapattárs szervezői jóváhagyása mentve.", "success")
     return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
 
@@ -3832,11 +4300,11 @@ def admin_move_player(registration_id):
     event_id = reg["event_id"]
     team_number = request.form.get("team_number", type=int)
     if team_number is None or team_number < 1 or team_number > 5:
-        flash("Érvénytelen csapat.", "error")
+        flash("Á‰rvénytelen csapat.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     if reg["payment_status"] == PAYMENT_INVALID:
-        flash("Érvénytelen státuszú játékos nem tehető aktív csapatba.", "error")
+        flash("Á‰rvénytelen státuszú játékos nem tehető aktív csapatba.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     current_size = get_current_team_size(event_id, team_number)
@@ -3852,11 +4320,10 @@ def admin_move_player(registration_id):
     execute(
         """
         UPDATE registrations
-        SET assigned_team = ?, assigned_stage = ?, assigned_slot = ?,
+        SET assigned_team = ? , assigned_stage = ? , assigned_slot = ? ,
             pending_stage = NULL, pending_position = NULL,
             removed_from_team = 0, is_manual = 1
-        WHERE id = ?
-        """,
+        WHERE id = ? """,
         (team_number, max(2, slot), slot, registration_id),
     )
     activate_stored_team_name_idea(registration_id)
@@ -3878,30 +4345,29 @@ def admin_update_payment(registration_id):
     payment_note = request.form.get("payment_note", "").strip()
 
     if payment_status not in (PAYMENT_PENDING, PAYMENT_PAID, PAYMENT_INVALID):
-        flash("Érvénytelen fizetési státusz.", "error")
+        flash("Á‰rvénytelen fizetési státusz.", "error")
         return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
     if payment_method not in (PAYMENT_METHOD_TRANSFER, PAYMENT_METHOD_CASH, PAYMENT_METHOD_NONE):
-        flash("Érvénytelen fizetési mód.", "error")
+        flash("Á‰rvénytelen fizetési mód.", "error")
         return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
     execute(
         """
         UPDATE registrations
-        SET payment_status = ?, payment_method = ?, payment_note = ?, is_manual = 1
-        WHERE id = ?
-        """,
+        SET payment_status = ? , payment_method = ? , payment_note = ? , is_manual = 1
+        WHERE id = ? """,
         (payment_status, payment_method, payment_note, registration_id),
     )
 
     if payment_status == PAYMENT_INVALID:
+        detach_fixed_partner_links(registration_id)
         execute(
             """
             UPDATE registrations
             SET assigned_team = NULL, assigned_stage = NULL, assigned_slot = NULL,
                 pending_stage = NULL, pending_position = NULL, removed_from_team = 1
-            WHERE id = ?
-            """,
+            WHERE id = ? """,
             (registration_id,),
         )
 
@@ -3929,8 +4395,7 @@ def admin_rename_team(event_id, team_number):
     admin_registration = query_one(
         """
         SELECT * FROM registrations
-        WHERE event_id = ?
-        ORDER BY id ASC LIMIT 1
+        WHERE event_id = ? ORDER BY id ASC LIMIT 1
         """,
         (event_id,),
     )
@@ -3944,7 +4409,7 @@ def admin_rename_team(event_id, team_number):
             event_id, team_number, proposed_name, proposed_by_registration_id,
             status, created_at, is_admin_override
         )
-        VALUES (?, ?, ?, ?, 'pending', ?, 1)
+        VALUES ( ?, ?, ?, ?, 'pending', ?, 1)
         """,
         (event_id, team_number, new_name, admin_registration["id"], now_str()),
     )
