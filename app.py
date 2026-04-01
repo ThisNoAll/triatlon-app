@@ -4109,6 +4109,7 @@ def admin_teams(event_id):
             {
                 "team_number": team_number,
                 "team_name": get_approved_team_name(event_id, team_number) or "",
+                "team_avatar": get_team_avatar_selection(event_id, team_number),
                 "members": [dict(member) for member in members],
             }
         )
@@ -4120,10 +4121,44 @@ def admin_teams(event_id):
         teams=teams,
         unassigned=unassigned,
         max_teams=MAX_TEAMS,
+        all_team_avatars=get_all_team_avatars(),
         format_dt_display=format_dt_display,
         payment_label=payment_label,
         payment_method_label=payment_method_label,
     )
+
+
+@app.route("/admin/team/<int:event_id>/<int:team_number>/avatar", methods=["POST"])
+@admin_required
+def admin_set_team_avatar(event_id, team_number):
+    event_row = get_event(event_id)
+    if not event_row:
+        flash("Az esemény nem található.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    if team_number < 1 or team_number > MAX_TEAMS:
+        flash("Érvénytelen csapat.", "error")
+        return redirect(url_for("admin_teams", event_id=event_id))
+
+    avatar_id = parse_avatar_id(request.form.get("avatar_id"))
+    if not avatar_id or not avatar_exists(avatar_id):
+        flash("Válassz érvényes avatárt.", "error")
+        return redirect(url_for("admin_teams", event_id=event_id))
+
+    real_members = get_team_members(event_id, team_number)
+    if not real_members:
+        flash("Üres csapathoz még nem állítható avatár.", "error")
+        return redirect(url_for("admin_teams", event_id=event_id))
+
+    selector_registration_id = real_members[0]["id"]
+    try:
+        choose_team_avatar(event_id, team_number, avatar_id, selector_registration_id)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin_teams", event_id=event_id))
+
+    flash(f"A {team_number}. csapat avatárja frissítve.", "success")
+    return redirect(url_for("admin_teams", event_id=event_id))
 
 
 @app.route("/admin/events/<int:event_id>/players/add", methods=["POST"])

@@ -20,6 +20,8 @@
     .teams-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:16px; }
     .team-card, .member { border:1px solid var(--line); border-radius:16px; padding:14px; background:#fff; }
     .member { margin-bottom:10px; background:#f8fafc; }
+    .team-avatar-admin { width:56px; height:56px; object-fit:cover; border-radius:12px; border:1px solid #dbeafe; background:#f1f5f9; display:block; }
+    .team-avatar-row { display:flex; align-items:center; gap:10px; margin:10px 0 12px; }
     .field { margin-bottom:10px; }
     .field input, .field select, .field textarea { width:100%; border:1px solid #cbd5e1; border-radius:12px; padding:10px 12px; font-size:14px; }
     .small { font-size:13px; color:var(--muted); }
@@ -100,49 +102,85 @@
                 </div>
                 <button type="submit">Csapatnév mentése</button>
               </form>
+              <form method="post" action="{{ url_for('admin_set_team_avatar', event_id=event['id'], team_number=team['team_number']) }}" style="margin-top:10px;">
+                <div class="small"><strong>Csapat avatár</strong></div>
+                <div class="team-avatar-row">
+                  {% if team.team_avatar %}
+                    <img class="team-avatar-admin" src="{{ team.team_avatar['image_path'] }}" alt="{{ team.team_avatar['name'] }}">
+                    <div class="small">Jelenlegi: <strong>{{ team.team_avatar['name'] }}</strong></div>
+                  {% else %}
+                    <div class="small">Még nincs kiválasztott avatár.</div>
+                  {% endif %}
+                </div>
+                <div class="field">
+                  <select name="avatar_id" required>
+                    <option value="">Válassz avatárt…</option>
+                    {% for avatar in all_team_avatars %}
+                      <option value="{{ avatar['id'] }}" {% if team.team_avatar and team.team_avatar['avatar_id'] == avatar['id'] %}selected{% endif %}>{{ avatar['name'] }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <button type="submit" class="btn-secondary">Avatár mentése</button>
+              </form>
               <div class="stack" style="margin-top:14px;">
                 {% if team.members %}
                   {% for member in team.members %}
                     <div class="member">
                       <strong>{{ member['participant_name'] }}</strong>
                       <div class="small">{{ member['participant_email'] }}</div>
-                      <div class="small">{{ payment_label(member['payment_status']) }} · {{ payment_method_label(member['payment_method']) }}</div>
-                      <form method="post" action="{{ url_for('admin_move_player', registration_id=member['id']) }}" style="margin-top:8px;">
-                        <div class="field">
-                          <select name="team_number">
-                            {% for n in range(1, max_teams + 1) %}
-                              <option value="{{ n }}" {% if n == team.team_number %}selected{% endif %}>Csapat {{ n }}</option>
-                            {% endfor %}
-                          </select>
-                        </div>
-                        <button type="submit">Áthelyezés</button>
-                      </form>
-                      <form method="post" action="{{ url_for('admin_remove_from_team', registration_id=member['id']) }}" style="display:inline-block;margin-top:8px;">
-                        <button type="submit" class="btn-secondary">Kivétel</button>
-                      </form>
-                      <form method="post" action="{{ url_for('admin_delete_player', registration_id=member['id']) }}" style="display:inline-block;margin-top:8px;">
-                        <button type="submit" class="btn-danger">Törlés</button>
-                      </form>
-                      <form method="post" action="{{ url_for('admin_update_payment', registration_id=member['id']) }}" style="margin-top:8px;">
-                        <div class="field">
-                          <select name="payment_status">
-                            <option value="pending" {% if member['payment_status'] == 'pending' %}selected{% endif %}>Fizetésre vár</option>
-                            <option value="paid" {% if member['payment_status'] == 'paid' %}selected{% endif %}>Befizetve</option>
-                            <option value="invalid" {% if member['payment_status'] == 'invalid' %}selected{% endif %}>Érvénytelen</option>
-                          </select>
-                        </div>
-                        <div class="field">
-                          <select name="payment_method">
-                            <option value="transfer" {% if member['payment_method'] == 'transfer' %}selected{% endif %}>Utalás</option>
-                            <option value="cash" {% if member['payment_method'] == 'cash' %}selected{% endif %}>Készpénz</option>
-                            <option value="none" {% if member['payment_method'] == 'none' %}selected{% endif %}>Nincs</option>
-                          </select>
-                        </div>
-                        <div class="field">
-                          <textarea name="payment_note" rows="2">{{ member['payment_note'] or '' }}</textarea>
-                        </div>
-                        <button type="submit">Fizetés mentése</button>
-                      </form>
+                      {% if member.get('is_virtual_partner') %}
+                        <div class="small">Szervező által jóváhagyott fix csapattárs</div>
+                      {% else %}
+                        <div class="small">{{ payment_label(member['payment_status']) }} · {{ payment_method_label(member['payment_method']) }}</div>
+                      {% endif %}
+                      {% if (not member.get('is_virtual_partner')) and member['teammate_preference'] == 'fixed' and member['assigned_stage'] == 2 and member['assigned_team'] and not member['fixed_partner_registration_id'] and member['fixed_partner_name'] %}
+                        <div class="small">Fix csapattárs név: <strong>{{ member['fixed_partner_name'] }}</strong></div>
+                        {% if member['fixed_partner_approved_by_admin'] == 1 %}
+                          <div class="small">Szervezői jóváhagyás: rendben</div>
+                        {% else %}
+                          <form method="post" action="{{ url_for('admin_approve_fixed_partner', registration_id=member['id']) }}" style="display:inline-block;margin-top:8px;">
+                            <button type="submit" class="btn-secondary">Fix csapattárs jóváhagyása</button>
+                          </form>
+                        {% endif %}
+                      {% endif %}
+                      {% if not member.get('is_virtual_partner') %}
+                        <form method="post" action="{{ url_for('admin_move_player', registration_id=member['id']) }}" style="margin-top:8px;">
+                          <div class="field">
+                            <select name="team_number">
+                              {% for n in range(1, max_teams + 1) %}
+                                <option value="{{ n }}" {% if n == team.team_number %}selected{% endif %}>Csapat {{ n }}</option>
+                              {% endfor %}
+                            </select>
+                          </div>
+                          <button type="submit">Áthelyezés</button>
+                        </form>
+                        <form method="post" action="{{ url_for('admin_remove_from_team', registration_id=member['id']) }}" style="display:inline-block;margin-top:8px;">
+                          <button type="submit" class="btn-secondary">Kivétel</button>
+                        </form>
+                        <form method="post" action="{{ url_for('admin_delete_player', registration_id=member['id']) }}" style="display:inline-block;margin-top:8px;">
+                          <button type="submit" class="btn-danger">Törlés</button>
+                        </form>
+                        <form method="post" action="{{ url_for('admin_update_payment', registration_id=member['id']) }}" style="margin-top:8px;">
+                          <div class="field">
+                            <select name="payment_status">
+                              <option value="pending" {% if member['payment_status'] == 'pending' %}selected{% endif %}>Fizetésre vár</option>
+                              <option value="paid" {% if member['payment_status'] == 'paid' %}selected{% endif %}>Befizetve</option>
+                              <option value="invalid" {% if member['payment_status'] == 'invalid' %}selected{% endif %}>Érvénytelen</option>
+                            </select>
+                          </div>
+                          <div class="field">
+                            <select name="payment_method">
+                              <option value="transfer" {% if member['payment_method'] == 'transfer' %}selected{% endif %}>Utalás</option>
+                              <option value="cash" {% if member['payment_method'] == 'cash' %}selected{% endif %}>Készpénz</option>
+                              <option value="none" {% if member['payment_method'] == 'none' %}selected{% endif %}>Nincs</option>
+                            </select>
+                          </div>
+                          <div class="field">
+                            <textarea name="payment_note" rows="2">{{ member['payment_note'] or '' }}</textarea>
+                          </div>
+                          <button type="submit">Fizetés mentése</button>
+                        </form>
+                      {% endif %}
                     </div>
                   {% endfor %}
                 {% else %}
