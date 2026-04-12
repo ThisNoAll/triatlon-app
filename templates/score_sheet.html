@@ -1,22 +1,25 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="hu">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pontozólap</title>
+  <title>Pontozolap</title>
   <style>body{font-family:Arial,Helvetica,sans-serif;padding:24px;background:#f8fafc}table{width:100%;border-collapse:collapse;background:#fff}th,td{border:1px solid #cbd5e1;padding:8px;text-align:left}.container{max-width:1000px;margin:0 auto}.card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:24px}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}.btn{display:inline-block;border:1px solid #cbd5e1;border-radius:12px;padding:10px 14px;text-decoration:none;color:#0f172a;background:#fff;font-weight:700}@media print{body{background:#fff;padding:0}.card{border:0}.actions{display:none}}</style>
 </head>
 <body>
 <div class="container"><div class="card">
-<div class="actions"><a class="btn" href="{{ url_for('admin_event_dashboard', event_id=event['id']) }}">Vissza az eseményhez</a><a class="btn" href="{{ url_for('admin_teams', event_id=event['id']) }}">Csapatkezelés</a></div>
-<h1>{{ event["title"] }} - Pontozólap</h1>
+<div class="actions"><a class="btn" href="{{ url_for('admin_event_dashboard', event_id=event['id']) }}">Vissza az esemenyhez</a><a class="btn" href="{{ url_for('admin_teams', event_id=event['id']) }}">Csapatkezeles</a></div>
+<h1>{{ event["title"] }} - Pontozolap</h1>
 <p>{{ format_dt_display(event["event_at"]) }}</p>
-{% if not teams %}<p>Még nincs elég csapat a pontozólaphoz.</p>{% else %}
+{% if not teams %}<p>Meg nincs eleg csapat a pontozolaphoz.</p>{% elif not disciplines %}<p>Nincs beallitva fix versenyszam az esemenyhez.</p>{% else %}
 <table>
-<thead><tr><th>#</th><th>Játék</th><th>Csapat A</th><th>Pont</th><th>Csapat B</th><th>Pont</th><th>Győztes</th><th>Megjegyzés</th></tr></thead>
+<thead><tr><th>#</th><th>Jatek</th><th>Csapat A</th><th>Pont</th><th>Csapat B</th><th>Pont</th><th>Gyoztes</th><th>Megjegyzes</th></tr></thead>
 <tbody>
+{% set row_no = namespace(value=1) %}
 {% for match in matches %}
-<tr><td>{{ loop.index0 * 2 + 1 }}</td><td>Csocsó</td><td>{{ match.team_a.team_name }}</td><td></td><td>{{ match.team_b.team_name }}</td><td></td><td></td><td></td></tr>
-<tr><td>{{ loop.index0 * 2 + 2 }}</td><td>Darts</td><td>{{ match.team_a.team_name }}</td><td></td><td>{{ match.team_b.team_name }}</td><td></td><td></td><td></td></tr>
+{% for discipline in disciplines %}
+<tr><td>{{ row_no.value }}</td><td>{{ discipline["name"] }}</td><td>{{ match.team_a.team_name }}</td><td></td><td>{{ match.team_b.team_name }}</td><td></td><td></td><td></td></tr>
+{% set row_no.value = row_no.value + 1 %}
+{% endfor %}
 {% endfor %}
 </tbody></table>{% endif %}
 </div></div>

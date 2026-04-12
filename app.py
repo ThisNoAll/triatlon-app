@@ -4580,6 +4580,8 @@ def admin_score_sheet(event_id):
     finalize_event_if_needed(event_row)
     event_row = get_event(event_id)
 
+    disciplines = get_event_fixed_disciplines(event_id)
+
     teams = []
     for team_number in range(1, MAX_TEAMS + 1):
         members = get_team_members_with_approved_virtual_partner(event_id, team_number)
@@ -4613,6 +4615,7 @@ def admin_score_sheet(event_id):
         event=event_row,
         teams=teams,
         matches=matches,
+        disciplines=disciplines,
         format_dt_display=format_dt_display,
     )
 
