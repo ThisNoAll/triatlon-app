@@ -2380,7 +2380,8 @@ def get_team_members_with_approved_virtual_partner(event_id, team_number):
         return real_members
 
     event = get_event(event_id)
-    virtual_payment_status = PAYMENT_PENDING if event and int(event.get("has_fee") or 0) == 1 else PAYMENT_PAID
+    has_fee = bool(event and int(event["has_fee"] or 0) == 1)
+    virtual_payment_status = PAYMENT_PENDING if has_fee else PAYMENT_PAID
 
     virtual_member = {
         "id": None,
