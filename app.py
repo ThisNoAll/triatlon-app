@@ -4582,7 +4582,7 @@ def admin_score_sheet(event_id):
 
     teams = []
     for team_number in range(1, MAX_TEAMS + 1):
-        members = get_team_members(event_id, team_number)
+        members = get_team_members_with_approved_virtual_partner(event_id, team_number)
         if len(members) >= 2:
             visible_proposal = get_visible_team_name_proposal(event_id, team_number)
             team_name = (
