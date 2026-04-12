@@ -102,6 +102,17 @@
                 </div>
                 <button type="submit">Csapatnév mentése</button>
               </form>
+              {% if team.team_name_state %}
+                <div class="small" style="margin-top:8px;">
+                  Csapatnev jovahagyas: {{ team.team_name_state['approvals'] }}/{{ team.team_name_state['required'] }}
+                  {% if team.team_name_state['is_final'] %}(final){% endif %}
+                </div>
+                {% if not team.team_name_state['is_final'] %}
+                  <form method="post" action="{{ url_for('admin_approve_team_name', event_id=event['id'], team_number=team['team_number']) }}" style="margin-top:8px;">
+                    <button type="submit" class="btn-secondary">Csapatnev jovahagyasa</button>
+                  </form>
+                {% endif %}
+              {% endif %}
               <form method="post" action="{{ url_for('admin_set_team_avatar', event_id=event['id'], team_number=team['team_number']) }}" style="margin-top:10px;">
                 <div class="small"><strong>Csapat avatár</strong></div>
                 <div class="team-avatar-row">
@@ -129,9 +140,30 @@
                       <strong>{{ member['participant_name'] }}</strong>
                       <div class="small">{{ member['participant_email'] }}</div>
                       {% if member.get('is_virtual_partner') %}
-                        <div class="small">Szervező által jóváhagyott fix csapattárs</div>
+                        <div class="small">Szervezo altal jovahagyott fix csapattars</div>
+                        <div class="small">{{ member.get('payment_status_label', payment_label(member['payment_status'])) }} - {{ member.get('payment_method_label', payment_method_label(member['payment_method'])) }}</div>
+                        <form method="post" action="{{ url_for('admin_update_virtual_partner_payment', registration_id=member['source_registration_id']) }}" style="margin-top:8px;">
+                          <div class="field">
+                            <select name="payment_status">
+                              <option value="pending" {% if member['payment_status'] == 'pending' %}selected{% endif %}>Fizetesre var</option>
+                              <option value="paid" {% if member['payment_status'] == 'paid' %}selected{% endif %}>Befizetve</option>
+                              <option value="invalid" {% if member['payment_status'] == 'invalid' %}selected{% endif %}>Ervenytelen</option>
+                            </select>
+                          </div>
+                          <div class="field">
+                            <select name="payment_method">
+                              <option value="transfer" {% if member['payment_method'] == 'transfer' %}selected{% endif %}>Utalas</option>
+                              <option value="cash" {% if member['payment_method'] == 'cash' %}selected{% endif %}>Keszpenz</option>
+                              <option value="none" {% if member['payment_method'] == 'none' %}selected{% endif %}>Nincs</option>
+                            </select>
+                          </div>
+                          <div class="field">
+                            <textarea name="payment_note" rows="2">{{ member['payment_note'] or '' }}</textarea>
+                          </div>
+                          <button type="submit">Fix csapattars fizetes mentese</button>
+                        </form>
                       {% else %}
-                        <div class="small">{{ payment_label(member['payment_status']) }} · {{ payment_method_label(member['payment_method']) }}</div>
+                        <div class="small">{{ payment_label(member['payment_status']) }} - {{ payment_method_label(member['payment_method']) }}</div>
                       {% endif %}
                       {% if (not member.get('is_virtual_partner')) and member['teammate_preference'] == 'fixed' and member['assigned_stage'] == 2 and member['assigned_team'] and not member['fixed_partner_registration_id'] and member['fixed_partner_name'] %}
                         <div class="small">Fix csapattárs név: <strong>{{ member['fixed_partner_name'] }}</strong></div>

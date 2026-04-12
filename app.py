@@ -284,7 +284,10 @@ def init_db():
                 teammate_preference TEXT NOT NULL DEFAULT 'random',
                 fixed_partner_registration_id INTEGER,
                 fixed_partner_name TEXT,
-                fixed_partner_approved_by_admin INTEGER NOT NULL DEFAULT 0
+                fixed_partner_approved_by_admin INTEGER NOT NULL DEFAULT 0,
+                fixed_partner_payment_status TEXT,
+                fixed_partner_payment_method TEXT,
+                fixed_partner_payment_note TEXT
             )
                 """
             )
@@ -457,6 +460,9 @@ def init_db():
                 fixed_partner_registration_id INTEGER,
                 fixed_partner_name TEXT,
                 fixed_partner_approved_by_admin INTEGER NOT NULL DEFAULT 0,
+                fixed_partner_payment_status TEXT,
+                fixed_partner_payment_method TEXT,
+                fixed_partner_payment_note TEXT,
 
                 FOREIGN KEY(event_id) REFERENCES events(id)
             );
@@ -639,6 +645,9 @@ def ensure_registration_schema(db):
             cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS fixed_partner_registration_id INTEGER")
             cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS fixed_partner_name TEXT")
             cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS fixed_partner_approved_by_admin INTEGER")
+            cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS fixed_partner_payment_status TEXT")
+            cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS fixed_partner_payment_method TEXT")
+            cur.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS fixed_partner_payment_note TEXT")
             cur.execute(
                 """
                 UPDATE registrations
@@ -668,6 +677,12 @@ def ensure_registration_schema(db):
             db.execute("ALTER TABLE registrations ADD COLUMN fixed_partner_name TEXT")
         if "fixed_partner_approved_by_admin" not in columns:
             db.execute("ALTER TABLE registrations ADD COLUMN fixed_partner_approved_by_admin INTEGER")
+        if "fixed_partner_payment_status" not in columns:
+            db.execute("ALTER TABLE registrations ADD COLUMN fixed_partner_payment_status TEXT")
+        if "fixed_partner_payment_method" not in columns:
+            db.execute("ALTER TABLE registrations ADD COLUMN fixed_partner_payment_method TEXT")
+        if "fixed_partner_payment_note" not in columns:
+            db.execute("ALTER TABLE registrations ADD COLUMN fixed_partner_payment_note TEXT")
         db.execute(
             """
             UPDATE registrations
@@ -2381,7 +2396,11 @@ def get_team_members_with_approved_virtual_partner(event_id, team_number):
 
     event = get_event(event_id)
     has_fee = bool(event and int(event["has_fee"] or 0) == 1)
-    virtual_payment_status = PAYMENT_PENDING if has_fee else PAYMENT_PAID
+    virtual_payment_status = only_member.get("fixed_partner_payment_status") or (
+        PAYMENT_PENDING if has_fee else PAYMENT_PAID
+    )
+    virtual_payment_method = only_member.get("fixed_partner_payment_method") or PAYMENT_METHOD_NONE
+    virtual_payment_note = only_member.get("fixed_partner_payment_note") or ""
 
     virtual_member = {
         "id": None,
@@ -2389,8 +2408,11 @@ def get_team_members_with_approved_virtual_partner(event_id, team_number):
         "participant_name": partner_name,
         "participant_email": "Szervező által jóváhagyott fix csapattárs",
         "payment_status": virtual_payment_status,
-        "payment_method": PAYMENT_METHOD_NONE,
-        "payment_note": "",
+        "payment_method": virtual_payment_method,
+        "payment_note": virtual_payment_note,
+        "payment_status_label": payment_label(virtual_payment_status),
+        "payment_method_label": payment_method_label(virtual_payment_method),
+        "source_registration_id": only_member["id"],
         "is_virtual_partner": True,
     }
     real_members.append(virtual_member)
@@ -2484,11 +2506,11 @@ def assign_fixed_stage2(event_id, registration_id, fixed_partner_registration_id
         assign_to_stage2_team(registration_id, partner["assigned_team"], 2)
         current_reg = get_registration_by_id(registration_id)
         execute(
-            "UPDATE registrations SET fixed_partner_registration_id = ? WHERE id = ? ",
+            "UPDATE registrations SET fixed_partner_registration_id = ? , fixed_partner_payment_status = NULL, fixed_partner_payment_method = NULL, fixed_partner_payment_note = NULL WHERE id = ? ",
             (partner["id"], registration_id),
         )
         execute(
-            "UPDATE registrations SET fixed_partner_registration_id = ? , fixed_partner_name = ? , fixed_partner_approved_by_admin = 0 WHERE id = ? ",
+            "UPDATE registrations SET fixed_partner_registration_id = ? , fixed_partner_name = ? , fixed_partner_approved_by_admin = 0, fixed_partner_payment_status = NULL, fixed_partner_payment_method = NULL, fixed_partner_payment_note = NULL WHERE id = ? ",
             (registration_id, (current_reg["participant_name"] if current_reg else ""), partner["id"]),
         )
         execute(
@@ -2672,15 +2694,23 @@ def register_participant(
         and fixed_partner_name
     ):
         fixed_partner_approved_by_admin = 1
+    fixed_partner_payment_status = None
+    fixed_partner_payment_method = None
+    fixed_partner_payment_note = ""
+    if teammate_preference == TEAM_PREF_FIXED and fixed_partner_name and not fixed_partner_registration_id:
+        fixed_partner_payment_status = PAYMENT_PENDING if event_row["has_fee"] == 1 else PAYMENT_PAID
+        fixed_partner_payment_method = PAYMENT_METHOD_NONE
+        fixed_partner_payment_note = ""
 
     cur = execute(
         """
         INSERT INTO registrations (
             event_id, participant_name, participant_email, provider, google_sub, created_at,
             payment_status, payment_method, payment_note, pending_team_name_idea, pending_team_avatar_idea,
-            teammate_preference, fixed_partner_registration_id, fixed_partner_name, fixed_partner_approved_by_admin
+            teammate_preference, fixed_partner_registration_id, fixed_partner_name, fixed_partner_approved_by_admin,
+            fixed_partner_payment_status, fixed_partner_payment_method, fixed_partner_payment_note
         )
-        VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             event_id,
@@ -2698,6 +2728,9 @@ def register_participant(
             fixed_partner_registration_id,
             fixed_partner_name,
             fixed_partner_approved_by_admin,
+            fixed_partner_payment_status,
+            fixed_partner_payment_method,
+            fixed_partner_payment_note,
         ),
     )
     registration_id = cur.lastrowid
@@ -3302,7 +3335,8 @@ def switch_to_random_teammate(slug):
         """
         UPDATE registrations
         SET teammate_preference = ? , fixed_partner_registration_id = NULL, fixed_partner_name = NULL,
-            fixed_partner_approved_by_admin = 0
+            fixed_partner_approved_by_admin = 0,
+            fixed_partner_payment_status = NULL, fixed_partner_payment_method = NULL, fixed_partner_payment_note = NULL
         WHERE id = ? """,
         (TEAM_PREF_RANDOM, registration_id),
     )
@@ -4110,6 +4144,7 @@ def admin_teams(event_id):
             {
                 "team_number": team_number,
                 "team_name": get_approved_team_name(event_id, team_number) or "",
+                "team_name_state": build_team_name_state(event_id, team_number),
                 "team_avatar": get_team_avatar_selection(event_id, team_number),
                 "members": [dict(member) for member in members],
             }
@@ -4368,6 +4403,48 @@ def admin_move_player(registration_id):
     return redirect(url_for("admin_teams", event_id=event_id))
 
 
+@app.route("/admin/player/<int:registration_id>/virtual-partner/payment", methods=["POST"])
+@admin_required
+def admin_update_virtual_partner_payment(registration_id):
+    reg = get_registration_by_id(registration_id)
+    if not reg:
+        flash("A játékos nem található.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    if reg["teammate_preference"] != TEAM_PREF_FIXED or reg["fixed_partner_registration_id"]:
+        flash("Ehhez a jelentkezőhöz nem tartozik kézzel megadott fix csapattárs.", "error")
+        return redirect(url_for("admin_teams", event_id=reg["event_id"]))
+
+    if not (reg["fixed_partner_name"] or "").strip():
+        flash("A fix csapattárs neve hiányzik.", "error")
+        return redirect(url_for("admin_teams", event_id=reg["event_id"]))
+
+    payment_status = request.form.get("payment_status", PAYMENT_PENDING)
+    payment_method = request.form.get("payment_method", PAYMENT_METHOD_NONE)
+    payment_note = request.form.get("payment_note", "").strip()
+
+    if payment_status not in (PAYMENT_PENDING, PAYMENT_PAID, PAYMENT_INVALID):
+        flash("Érvénytelen fizetési státusz.", "error")
+        return redirect(url_for("admin_teams", event_id=reg["event_id"]))
+
+    if payment_method not in (PAYMENT_METHOD_TRANSFER, PAYMENT_METHOD_CASH, PAYMENT_METHOD_NONE):
+        flash("Érvénytelen fizetési mód.", "error")
+        return redirect(url_for("admin_teams", event_id=reg["event_id"]))
+
+    execute(
+        """
+        UPDATE registrations
+        SET fixed_partner_payment_status = ? ,
+            fixed_partner_payment_method = ? ,
+            fixed_partner_payment_note = ? ,
+            is_manual = 1
+        WHERE id = ? """,
+        (payment_status, payment_method, payment_note, registration_id),
+    )
+    flash("A fix csapattárs fizetési státusza frissítve.", "success")
+    return redirect(url_for("admin_teams", event_id=reg["event_id"]))
+
+
 @app.route("/admin/player/<int:registration_id>/payment", methods=["POST"])
 @admin_required
 def admin_update_payment(registration_id):
@@ -4409,6 +4486,43 @@ def admin_update_payment(registration_id):
 
     flash("Fizetési státusz frissítve.", "success")
     return redirect(url_for("admin_teams", event_id=reg["event_id"]))
+
+
+@app.route("/admin/team/<int:event_id>/<int:team_number>/approve-name", methods=["POST"])
+@admin_required
+def admin_approve_team_name(event_id, team_number):
+    event_row = get_event(event_id)
+    if not event_row:
+        flash("Az esemény nem található.", "error")
+        return redirect(url_for("admin_dashboard"))
+
+    pending = get_pending_team_name_proposal(event_id, team_number)
+    if not pending:
+        flash("Ehhez a csapathoz nincs függő csapatnév-javaslat.", "info")
+        return redirect(url_for("admin_teams", event_id=event_id))
+
+    if team_name_exists(event_id, team_number, pending["proposed_name"]):
+        execute(
+            "UPDATE team_name_proposals SET status = 'rejected', finalized_at = ? WHERE id = ? ",
+            (now_str(), pending["id"]),
+        )
+        flash("A csapatnév nem hagyható jóvá, mert már létezik ilyen név.", "error")
+        return redirect(url_for("admin_teams", event_id=event_id))
+
+    execute(
+        """
+        UPDATE team_name_proposals
+        SET status = 'rejected', finalized_at = ?
+        WHERE event_id = ? AND team_number = ? AND status = 'approved'
+        """,
+        (now_str(), event_id, team_number),
+    )
+    execute(
+        "UPDATE team_name_proposals SET status = 'approved', finalized_at = ? WHERE id = ? ",
+        (now_str(), pending["id"]),
+    )
+    flash("A csapatnév szervezői jóváhagyással véglegesítve.", "success")
+    return redirect(url_for("admin_teams", event_id=event_id))
 
 
 @app.route("/admin/team/<int:event_id>/<int:team_number>/rename", methods=["POST"])
