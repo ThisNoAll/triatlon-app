@@ -3,6 +3,7 @@ import io
 import base64
 import shutil
 import unittest
+from datetime import datetime, timedelta
 
 import app as app_module
 
@@ -163,6 +164,37 @@ class TriatlonAppTests(unittest.TestCase):
         self.assertEqual(event_page.status_code, 200)
         self.assertIn("Admin Kupa", dashboard.get_data(as_text=True))
         self.assertIn("Admin Kupa", event_page.get_data(as_text=True))
+
+
+    def test_admin_teams_handles_virtual_fixed_partner_on_sqlite(self):
+        event_id = self.create_event("Fix Paros Kupa", "fix-paros-kupa", has_fee=1)
+        registration_id = self.create_registration(
+            event_id,
+            "Teszt Elek",
+            "teszt@example.com",
+            assigned_team=1,
+            assigned_slot=1,
+        )
+        with self.app.app_context():
+            app_module.execute(
+                """
+                UPDATE registrations
+                SET teammate_preference = ? ,
+                    fixed_partner_name = ? ,
+                    fixed_partner_approved_by_admin = 1,
+                    fixed_partner_registration_id = NULL
+                WHERE id = ? 
+                """,
+                (app_module.TEAM_PREF_FIXED, "Minta Bela", registration_id),
+            )
+
+        with self.client.session_transaction() as session:
+            session["admin_logged_in"] = True
+
+        response = self.client.get(f"/admin/teams/{event_id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Minta Bela", response.get_data(as_text=True))
 
     def test_admin_can_delete_event_after_confirmation(self):
         event_id = self.create_event("TÄ‚â€žĂ˘â‚¬ĹˇÄ‚ËĂ˘â€šÂ¬ÄąÄľĂ„â€šĂ‹ÂÄ‚ËĂ˘â‚¬ĹˇĂ‚Â¬Ă„Ä…Ă‹â€ˇÄ‚â€žĂ˘â‚¬ĹˇÄ‚â€ąĂ‚ÂĂ„â€šĂ‹ÂÄ‚ËĂ˘â€šÂ¬ÄąË‡Ä‚â€šĂ‚Â¬Ä‚â€žĂ„â€¦Ä‚â€žĂ„ÄľĂ„â€šĂ˘â‚¬ĹľÄ‚ËĂ˘â€šÂ¬ÄąË‡Ă„â€šĂ˘â‚¬Ä…Ä‚â€šĂ‚ÂÄ‚â€žĂ˘â‚¬ĹˇÄ‚â€ąĂ‚ÂĂ„â€šĂ‹ÂÄ‚ËĂ˘â‚¬ĹˇĂ‚Â¬Ă„Ä…Ă‹â€ˇĂ„â€šĂ˘â‚¬ĹˇÄ‚â€šĂ‚Â¬Ă„â€šĂ˘â‚¬ĹľÄ‚â€žĂ˘â‚¬Â¦Ă„â€šĂ˘â‚¬Ä…Ä‚ËĂ˘â€šÂ¬Ă‹â€ˇÄ‚â€žĂ˘â‚¬ĹˇÄ‚ËĂ˘â€šÂ¬ÄąÄľĂ„â€šĂ‹ÂÄ‚ËĂ˘â‚¬ĹˇĂ‚Â¬Ă„Ä…Ă‹â€ˇÄ‚â€žĂ˘â‚¬ĹˇÄ‚â€ąĂ‚ÂĂ„â€šĂ‹ÂÄ‚ËĂ˘â€šÂ¬ÄąË‡Ä‚â€šĂ‚Â¬Ä‚â€žĂ„â€¦Ä‚â€ąĂ˘â‚¬Ë‡Ă„â€šĂ˘â‚¬ĹľÄ‚ËĂ˘â€šÂ¬ÄąË‡Ă„â€šĂ‹ÂÄ‚ËĂ˘â‚¬ĹˇĂ‚Â¬Ă„Ä…Ă‹â€ˇÄ‚â€žĂ˘â‚¬ĹˇÄ‚ËĂ˘â€šÂ¬ÄąË‡Ă„â€šĂ˘â‚¬ĹˇÄ‚â€šĂ‚Â¶rlendÄ‚â€žĂ˘â‚¬ĹˇÄ‚ËĂ˘â€šÂ¬ÄąÄľĂ„â€šĂ‹ÂÄ‚ËĂ˘â‚¬ĹˇĂ‚Â¬Ă„Ä…Ă‹â€ˇÄ‚â€žĂ˘â‚¬ĹˇÄ‚â€ąĂ‚ÂĂ„â€šĂ‹ÂÄ‚ËĂ˘â€šÂ¬ÄąË‡Ä‚â€šĂ‚Â¬Ä‚â€žĂ„â€¦Ä‚â€žĂ„ÄľĂ„â€šĂ˘â‚¬ĹľÄ‚ËĂ˘â€šÂ¬ÄąË‡Ă„â€šĂ‹ÂÄ‚ËĂ˘â‚¬ĹˇĂ‚Â¬Ă„Ä…Ă„ÄľÄ‚â€žĂ˘â‚¬ĹˇÄ‚â€ąĂ‚ÂĂ„â€šĂ‹ÂÄ‚ËĂ˘â€šÂ¬ÄąË‡Ä‚â€šĂ‚Â¬Ă„â€šĂ˘â‚¬ĹˇÄ‚â€šĂ‚Â¦Ä‚â€žĂ˘â‚¬ĹˇÄ‚ËĂ˘â€šÂ¬ÄąÄľĂ„â€šĂ‹ÂÄ‚ËĂ˘â‚¬ĹˇĂ‚Â¬Ă„Ä…Ă‹â€ˇÄ‚â€žĂ˘â‚¬ĹˇÄ‚ËĂ˘â€šÂ¬Ă„â€¦Ă„â€šĂ˘â‚¬ĹˇÄ‚â€šĂ‚ÂĂ„â€šĂ˘â‚¬ĹľÄ‚ËĂ˘â€šÂ¬ÄąË‡Ă„â€šĂ˘â‚¬Ä…Ä‚â€šĂ‚ÂÄ‚â€žĂ˘â‚¬ĹˇÄ‚â€ąĂ‚ÂĂ„â€šĂ‹ÂÄ‚ËĂ˘â€šÂ¬ÄąË‡Ä‚â€šĂ‚Â¬Ä‚â€žĂ„â€¦Ä‚â€ąĂ˘â‚¬Ë‡Ä‚â€žĂ˘â‚¬ĹˇÄ‚ËĂ˘â€šÂ¬ÄąË‡Ă„â€šĂ˘â‚¬ĹˇÄ‚â€šĂ‚Â¬Ă„â€šĂ˘â‚¬ĹľÄ‚ËĂ˘â€šÂ¬ÄąË‡Ă„â€šĂ‹ÂÄ‚ËĂ˘â‚¬ĹˇĂ‚Â¬Ă„Ä…Ă‹â€ˇÄ‚â€žĂ˘â‚¬ĹˇÄ‚ËĂ˘â€šÂ¬ÄąË‡Ă„â€šĂ˘â‚¬ĹˇÄ‚â€šĂ‚Â Kupa", "torlendo-kupa")
@@ -617,6 +649,75 @@ class TriatlonAppTests(unittest.TestCase):
             )
             self.assertIsNotNone(row)
             self.assertIn("/static/team_avatars/custom/", row["image_path"])
+
+    def test_movie_night_draw_selects_winner_after_third_submission(self):
+        first = self.client.post(
+            "/film-est-sorsolo",
+            data={"name": "Peti", "movie_title": "Interstellar"},
+            follow_redirects=True,
+        )
+        second = self.client.post(
+            "/film-est-sorsolo",
+            data={"name": "Jakab", "movie_title": "The Matrix"},
+            follow_redirects=True,
+        )
+        third = self.client.post(
+            "/film-est-sorsolo",
+            data={"name": "Martin", "movie_title": "Inception"},
+            follow_redirects=True,
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(third.status_code, 200)
+        self.assertIn("Nyertes film", third.get_data(as_text=True))
+
+        with self.app.app_context():
+            cycle_key = app_module.movie_night_cycle_key()
+            entries_count = app_module.query_one(
+                "SELECT COUNT(*) AS cnt FROM movie_night_entries WHERE cycle_key = ?",
+                (cycle_key,),
+            )["cnt"]
+            draw_row = app_module.query_one(
+                """
+                SELECT winner_name, winner_movie
+                FROM movie_night_draws
+                WHERE cycle_key = ?
+                """,
+                (cycle_key,),
+            )
+            self.assertEqual(entries_count, 3)
+            self.assertIsNotNone(draw_row)
+            self.assertIn(draw_row["winner_name"], ("Peti", "Jakab", "Martin"))
+            self.assertIn(draw_row["winner_movie"], ("Interstellar", "The Matrix", "Inception"))
+
+    def test_movie_night_route_ignores_previous_cycle_data(self):
+        with self.app.app_context():
+            current_cycle = app_module.movie_night_cycle_key()
+            previous_cycle = (datetime.strptime(current_cycle, "%Y-%m-%d") - timedelta(days=7)).strftime(
+                "%Y-%m-%d"
+            )
+            app_module.execute(
+                """
+                INSERT INTO movie_night_entries (cycle_key, participant_name, movie_title, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (previous_cycle, "Peti", "Old Movie", "2026-03-21 10:00:00", "2026-03-21 10:00:00"),
+            )
+            app_module.execute(
+                """
+                INSERT INTO movie_night_draws (cycle_key, winner_name, winner_movie, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (previous_cycle, "Peti", "Old Movie", "2026-03-21 10:00:00"),
+            )
+
+        response = self.client.get("/film-est-sorsolo")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertNotIn("Old Movie", html)
+        self.assertIn("Meg nincs bekuldes", html)
 
 if __name__ == "__main__":
     unittest.main()

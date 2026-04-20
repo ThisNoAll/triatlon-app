@@ -94,6 +94,7 @@ TEAM_PAIRING_MIXED = "mixed_auto"
 TEAM_PAIRING_MIXED_CONFIRM = "mixed"
 TEAM_PAIRING_FIXED_ONLY = "fixed_only"
 TEAM_PAIRING_RANDOM_ONLY = "random_only"
+MOVIE_NIGHT_ALLOWED_NAMES = ("Peti", "Jakab", "Martin")
 
 DISCIPLINE_IMAGE_UPLOAD_DIR = os.path.join(PERSIST_STATIC_DIR, "uploads", "discipline_images")
 ALLOWED_DISCIPLINE_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
@@ -581,6 +582,7 @@ def init_db():
     ensure_registration_schema(db)
     ensure_discipline_schema(db)
     ensure_event_results_schema(db)
+    ensure_movie_night_schema(db)
     db.commit()
 
 
@@ -969,6 +971,67 @@ def ensure_team_avatar_catalog_seeded():
         )
 
 
+def ensure_movie_night_schema(db):
+    if get_database_engine() == "postgres":
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS movie_night_entries (
+                    id SERIAL PRIMARY KEY,
+                    cycle_key TEXT NOT NULL,
+                    participant_name TEXT NOT NULL,
+                    movie_title TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(cycle_key, participant_name)
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS movie_night_draws (
+                    id SERIAL PRIMARY KEY,
+                    cycle_key TEXT NOT NULL UNIQUE,
+                    winner_name TEXT NOT NULL,
+                    winner_movie TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_movie_night_entries_cycle
+                ON movie_night_entries (cycle_key, participant_name)
+                """
+            )
+        db.commit()
+    else:
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS movie_night_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cycle_key TEXT NOT NULL,
+                participant_name TEXT NOT NULL,
+                movie_title TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(cycle_key, participant_name)
+            );
+
+            CREATE TABLE IF NOT EXISTS movie_night_draws (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cycle_key TEXT NOT NULL UNIQUE,
+                winner_name TEXT NOT NULL,
+                winner_movie TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_movie_night_entries_cycle
+            ON movie_night_entries (cycle_key, participant_name);
+            """
+        )
+
+
 @app.before_request
 def before_request():
     init_db()
@@ -1004,6 +1067,49 @@ def compute_payment_deadline(event_at):
 
 def normalize_team_name(name):
     return " ".join((name or "").strip().split())
+
+
+def movie_night_cycle_key(now=None):
+    current = now or datetime.now()
+    days_since_wednesday = (current.weekday() - 2) % 7
+    cycle_start = current - timedelta(days=days_since_wednesday)
+    return cycle_start.strftime("%Y-%m-%d")
+
+
+def movie_night_next_reset_label(cycle_key):
+    cycle_start = datetime.strptime(cycle_key, "%Y-%m-%d")
+    next_reset = cycle_start + timedelta(days=7)
+    return next_reset.strftime("%Y-%m-%d")
+
+
+def get_movie_night_entries(cycle_key):
+    rows = query_all(
+        """
+        SELECT participant_name, movie_title, created_at, updated_at
+        FROM movie_night_entries
+        WHERE cycle_key = ?
+        """,
+        (cycle_key,),
+    )
+    by_name = {row["participant_name"]: row for row in rows}
+    ordered = []
+    for name in MOVIE_NIGHT_ALLOWED_NAMES:
+        row = by_name.get(name)
+        if row:
+            ordered.append(row)
+    return ordered
+
+
+def get_movie_night_draw(cycle_key):
+    return query_one(
+        """
+        SELECT cycle_key, winner_name, winner_movie, created_at
+        FROM movie_night_draws
+        WHERE cycle_key = ?
+        LIMIT 1
+        """,
+        (cycle_key,),
+    )
 
 
 ALLOWED_DESCRIPTION_TAGS = {"p", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li", "a", "blockquote"}
@@ -3120,6 +3226,93 @@ def finalize_team_names_for_event(event_id):
 # --------------------------------------------------
 # Routes - Public
 # --------------------------------------------------
+@app.route("/film-est-sorsolo", methods=["GET", "POST"])
+def movie_night_draw():
+    cycle_key = movie_night_cycle_key()
+    draw = get_movie_night_draw(cycle_key)
+
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        movie_title = " ".join((request.form.get("movie_title") or "").split())
+
+        if name not in MOVIE_NIGHT_ALLOWED_NAMES:
+            flash("Csak Peti, Jakab vagy Martin valaszthato.", "error")
+            return redirect(url_for("movie_night_draw"))
+
+        if not movie_title:
+            flash("Adj meg egy filmcimet.", "error")
+            return redirect(url_for("movie_night_draw"))
+
+        if len(movie_title) > 140:
+            flash("A filmcim legfeljebb 140 karakter lehet.", "error")
+            return redirect(url_for("movie_night_draw"))
+
+        if draw:
+            flash("Erre a hetre mar kisorsoltuk a filmet. Uj kor szerdan indul.", "info")
+            return redirect(url_for("movie_night_draw"))
+
+        existing = query_one(
+            """
+            SELECT id
+            FROM movie_night_entries
+            WHERE cycle_key = ? AND participant_name = ?
+            LIMIT 1
+            """,
+            (cycle_key, name),
+        )
+        if existing:
+            execute(
+                """
+                UPDATE movie_night_entries
+                SET movie_title = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (movie_title, now_str(), existing["id"]),
+            )
+            flash(f"{name} filmje frissitve lett.", "success")
+        else:
+            execute(
+                """
+                INSERT INTO movie_night_entries (cycle_key, participant_name, movie_title, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (cycle_key, name, movie_title, now_str(), now_str()),
+            )
+            flash(f"{name} sikeresen bekuldte a filmjet.", "success")
+
+        entries = get_movie_night_entries(cycle_key)
+        if len(entries) == len(MOVIE_NIGHT_ALLOWED_NAMES):
+            selected = random.choice(entries)
+            execute(
+                """
+                INSERT INTO movie_night_draws (cycle_key, winner_name, winner_movie, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (cycle_key, selected["participant_name"], selected["movie_title"], now_str()),
+            )
+            flash(
+                f"A heti nyertes film: {selected['movie_title']} ({selected['participant_name']}).",
+                "success",
+            )
+
+        return redirect(url_for("movie_night_draw"))
+
+    entries = get_movie_night_entries(cycle_key)
+    draw = draw or get_movie_night_draw(cycle_key)
+    submitted_names = {row["participant_name"] for row in entries}
+    missing_names = [name for name in MOVIE_NIGHT_ALLOWED_NAMES if name not in submitted_names]
+
+    return render_template(
+        "movie_night_draw.html",
+        allowed_names=MOVIE_NIGHT_ALLOWED_NAMES,
+        entries=entries,
+        draw=draw,
+        cycle_key=cycle_key,
+        next_reset=movie_night_next_reset_label(cycle_key),
+        missing_names=missing_names,
+    )
+
+
 @app.route("/")
 def home():
     for event_row in query_all("SELECT * FROM events WHERE is_closed = 0"):
