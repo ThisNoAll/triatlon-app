@@ -1251,6 +1251,24 @@ def strip_html_tags(value):
 
 def extract_movie_db_titles_from_html(source_html):
     titles = set()
+    blocked_href_fragments = (
+        "/wp-",
+        "/category/",
+        "/tag/",
+        "/author/",
+        "/feed",
+        "/page/",
+    )
+    blocked_exact_labels = {
+        "főoldal",
+        "oldalak",
+        "következő",
+        "előző",
+        "next",
+        "previous",
+        "keresés",
+        "search",
+    }
     for href, inner in re.findall(
         r"""<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>""",
         source_html,
@@ -1259,15 +1277,28 @@ def extract_movie_db_titles_from_html(source_html):
         href = (href or "").strip()
         if not href:
             continue
-        if "movie.nhely.hu" not in href and not href.startswith("/"):
+        href_lower = href.lower()
+        if href.startswith("#") or any(fragment in href_lower for fragment in blocked_href_fragments):
             continue
         label = html.unescape(strip_html_tags(inner)).strip()
+        label = re.sub(r"\s+", " ", label)
+        if len(label) < 2 or len(label) > 120:
+            continue
+        if label.lower() in blocked_exact_labels:
+            continue
+        if not re.search(r"[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű0-9]", label):
+            continue
+        titles.add(label)
+
+    for alt_text in re.findall(r"""alt=["']([^"']+)["']""", source_html, re.IGNORECASE):
+        label = html.unescape((alt_text or "").strip())
         label = re.sub(r"\s+", " ", label)
         if len(label) < 2 or len(label) > 120:
             continue
         if not re.search(r"[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű0-9]", label):
             continue
         titles.add(label)
+
     return sorted(titles)
 
 
@@ -1291,6 +1322,10 @@ def movie_titles_equivalent(input_title, candidate_title):
         return True
     if n1.replace(" ", "") == n2.replace(" ", ""):
         return True
+    if len(n1) >= 4 and n1 in n2:
+        return True
+    if len(n2) >= 4 and n2 in n1:
+        return True
 
     t1 = set(n1.split())
     t2 = set(n2.split())
@@ -1299,6 +1334,33 @@ def movie_titles_equivalent(input_title, candidate_title):
 
     ratio = difflib.SequenceMatcher(None, n1, n2).ratio()
     return ratio >= 0.92
+
+
+def movie_title_match_score(input_title, candidate_title):
+    n1 = normalize_movie_lookup_title(input_title)
+    n2 = normalize_movie_lookup_title(candidate_title)
+    if not n1 or not n2:
+        return 0.0
+    if n1 == n2 or n1.replace(" ", "") == n2.replace(" ", ""):
+        return 1.0
+
+    full_ratio = difflib.SequenceMatcher(None, n1, n2).ratio()
+
+    tokens1 = [token for token in n1.split() if token]
+    tokens2 = [token for token in n2.split() if token]
+    token_score = 0.0
+    if tokens1 and tokens2:
+        best_token_ratios = []
+        for token in tokens1:
+            best = max(difflib.SequenceMatcher(None, token, candidate).ratio() for candidate in tokens2)
+            best_token_ratios.append(best)
+        token_score = sum(best_token_ratios) / len(best_token_ratios)
+
+    compact1 = n1.replace(" ", "")
+    compact2 = n2.replace(" ", "")
+    compact_ratio = difflib.SequenceMatcher(None, compact1, compact2).ratio()
+
+    return max(full_ratio, token_score * 0.98, compact_ratio * 0.96)
 
 
 def fetch_movie_db_titles(force_refresh=False):
@@ -1356,9 +1418,31 @@ def validate_movie_title_with_movie_db(movie_title):
         seen.add(key)
         unique_titles.append(title)
 
+    best_candidate = ""
+    best_score = 0.0
     for candidate in unique_titles:
         if movie_titles_equivalent(movie_title, candidate):
             return True, candidate, ""
+        score = movie_title_match_score(movie_title, candidate)
+        if score > best_score:
+            best_score = score
+            best_candidate = candidate
+
+    # Fallback: once force-refresh the title cache before rejecting.
+    try:
+        refreshed_titles = fetch_movie_db_titles(force_refresh=True)
+    except Exception:
+        refreshed_titles = []
+    for candidate in refreshed_titles:
+        if movie_titles_equivalent(movie_title, candidate):
+            return True, candidate, ""
+        score = movie_title_match_score(movie_title, candidate)
+        if score > best_score:
+            best_score = score
+            best_candidate = candidate
+
+    if best_candidate and best_score >= 0.84:
+        return True, best_candidate, ""
 
     return (
         False,
