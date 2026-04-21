@@ -137,7 +137,7 @@
               </div>
               {% if entry and entry["attendance_status"] == status_coming and entry["poster_url"] %}
                 {% set cover_src = entry["poster_url"] %}
-                {% if "movie.nhely.hu" in cover_src %}
+                {% if entry["poster_source"] == "movie.nhely.hu" %}
                   {% set cover_src = url_for('movie_cover_proxy', url=cover_src) %}
                 {% endif %}
                 <img class="cover" src="{{ cover_src }}" alt="{{ entry['movie_title'] }}">

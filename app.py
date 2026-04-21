@@ -1698,7 +1698,15 @@ def is_allowed_movie_cover_url(value):
     if parsed.scheme not in ("http", "https"):
         return False
     host = (parsed.netloc or "").lower()
-    return host == "movie.nhely.hu" or host.endswith(".movie.nhely.hu")
+    allowed_suffixes = (
+        "movie.nhely.hu",
+        ".movie.nhely.hu",
+        "wp.com",
+        ".wp.com",
+        "wordpress.com",
+        ".wordpress.com",
+    )
+    return any(host == suffix.lstrip(".") or host.endswith(suffix) for suffix in allowed_suffixes)
 
 
 @app.route("/movie-cover-proxy")
