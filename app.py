@@ -1153,27 +1153,38 @@ def fetch_text_url(url, timeout=4):
     return raw.decode("utf-8", errors="ignore")
 
 
-def extract_tmdb_poster_url(html):
+def extract_og_image_url(html):
     match = re.search(
-        r"""(?:"|')(https?://(?:image|media)\.tmdb\.org/t/p/[^"']+|/t/p/[^"']+)(?:"|')""",
+        r"""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']""",
         html,
         re.IGNORECASE,
     )
     if not match:
         return ""
-    url = match.group(1)
-    if url.startswith("/t/p/"):
-        return f"https://image.tmdb.org{url}"
-    return url
+    return match.group(1).strip()
 
 
-def extract_imdb_poster_url(html):
+def extract_imdb_inline_poster_url(html):
     match = re.search(
         r"""https://m\.media-amazon\.com/images/M/[^"'\s>]+\.(?:jpg|jpeg|png)""",
         html,
         re.IGNORECASE,
     )
     return match.group(0) if match else ""
+
+
+def extract_tmdb_movie_path(html):
+    match = re.search(r"""href=["'](/movie/\d+[^"']*)["']""", html, re.IGNORECASE)
+    if not match:
+        return ""
+    return match.group(1)
+
+
+def extract_imdb_title_path(html):
+    match = re.search(r"""href=["'](/title/tt\d+/[^"']*)["']""", html, re.IGNORECASE)
+    if not match:
+        return ""
+    return match.group(1)
 
 
 def lookup_movie_cover_url(movie_title):
@@ -1185,22 +1196,54 @@ def lookup_movie_cover_url(movie_title):
     imdb_url = f"https://www.imdb.com/find/?q={query}&s=tt"
 
     try:
-        html = fetch_text_url(tmdb_url)
-        poster_url = extract_tmdb_poster_url(html)
-        if poster_url:
-            return poster_url, "tmdb"
+        search_html = fetch_text_url(tmdb_url)
+        movie_path = extract_tmdb_movie_path(search_html)
+        if movie_path:
+            movie_html = fetch_text_url(f"https://www.themoviedb.org{movie_path}")
+            poster_url = extract_og_image_url(movie_html)
+            if poster_url:
+                return poster_url, "tmdb"
     except Exception:
         pass
 
     try:
-        html = fetch_text_url(imdb_url)
-        poster_url = extract_imdb_poster_url(html)
+        search_html = fetch_text_url(imdb_url)
+        title_path = extract_imdb_title_path(search_html)
+        if title_path:
+            title_html = fetch_text_url(f"https://www.imdb.com{title_path}")
+            poster_url = extract_og_image_url(title_html)
+            if poster_url:
+                return poster_url, "imdb"
+        poster_url = extract_imdb_inline_poster_url(search_html)
         if poster_url:
             return poster_url, "imdb"
     except Exception:
         pass
 
     return "", ""
+
+
+def backfill_movie_night_missing_posters(cycle_key, entries):
+    updated = False
+    for entry in entries:
+        if entry["poster_url"]:
+            continue
+        title = (entry["movie_title"] or "").strip()
+        if not title:
+            continue
+        poster_url, poster_source = lookup_movie_cover_url(title)
+        if not poster_url:
+            continue
+        execute(
+            """
+            UPDATE movie_night_entries
+            SET poster_url = ?, poster_source = ?, updated_at = ?
+            WHERE cycle_key = ? AND participant_name = ?
+            """,
+            (poster_url, poster_source, now_str(), cycle_key, entry["participant_name"]),
+        )
+        updated = True
+    return updated
 
 
 ALLOWED_DESCRIPTION_TAGS = {"p", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li", "a", "blockquote"}
@@ -3393,6 +3436,8 @@ def movie_night_draw():
         return redirect(url_for("movie_night_draw"))
 
     entries = get_movie_night_entries(cycle_key)
+    if backfill_movie_night_missing_posters(cycle_key, entries):
+        entries = get_movie_night_entries(cycle_key)
     draw = draw or get_movie_night_draw(cycle_key)
     submitted_names = {row["participant_name"] for row in entries}
     missing_names = [name for name in MOVIE_NIGHT_ALLOWED_NAMES if name not in submitted_names]
