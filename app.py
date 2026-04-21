@@ -11,7 +11,7 @@ import difflib
 from types import SimpleNamespace
 from functools import wraps
 from html.parser import HTMLParser
-from urllib.parse import parse_qs, urlparse, quote_plus
+from urllib.parse import parse_qs, urlparse, quote_plus, urljoin
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from flask import (
@@ -113,6 +113,7 @@ MOVIE_DB_TITLES_CACHE = {
     "fetched_at": 0.0,
     "titles": [],
 }
+MOVIE_DB_POSTER_HINTS = {}
 DEFAULT_HTTP_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (X11; Linux x86_64) "
@@ -1313,6 +1314,12 @@ def normalize_movie_lookup_title(value):
     return text.strip()
 
 
+def cleanup_movie_display_title(value):
+    title = re.sub(r"^\s*\d+\s+", "", (value or "").strip())
+    title = re.sub(r"\s+", " ", title).strip()
+    return title
+
+
 def movie_titles_equivalent(input_title, candidate_title):
     n1 = normalize_movie_lookup_title(input_title)
     n2 = normalize_movie_lookup_title(candidate_title)
@@ -1391,6 +1398,42 @@ def fetch_movie_db_titles(force_refresh=False):
     return cleaned_titles
 
 
+def extract_movie_db_search_candidates(source_html):
+    candidates = []
+    for href, inner in re.findall(
+        r"""<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>""",
+        source_html,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        href = (href or "").strip()
+        if not href or href.startswith("#"):
+            continue
+        href_lower = href.lower()
+        if "movie.nhely.hu" not in href_lower and not href.startswith("/"):
+            continue
+        if any(fragment in href_lower for fragment in ("/category/", "/tag/", "/author/", "/feed", "/page/")):
+            continue
+
+        label = html.unescape(strip_html_tags(inner)).strip()
+        label = re.sub(r"\s+", " ", label)
+        if len(label) < 2 or len(label) > 160:
+            continue
+
+        poster_url = ""
+        img_match = re.search(r"""<img[^>]+src=["']([^"']+)["']""", inner, re.IGNORECASE)
+        if img_match:
+            poster_url = urljoin(MOVIE_DB_BASE_URL, img_match.group(1).strip())
+
+        candidates.append(
+            {
+                "title": cleanup_movie_display_title(label),
+                "poster_url": poster_url,
+                "href": urljoin(MOVIE_DB_BASE_URL, href),
+            }
+        )
+    return candidates
+
+
 def validate_movie_title_with_movie_db(movie_title):
     if app.config.get("TESTING"):
         return True, movie_title, ""
@@ -1405,6 +1448,14 @@ def validate_movie_title_with_movie_db(movie_title):
             MOVIE_DB_SEARCH_URL.format(query=quote_plus(movie_title)),
             timeout=8,
         )
+        search_candidates = extract_movie_db_search_candidates(search_html)
+        for candidate in search_candidates:
+            if candidate["title"]:
+                titles.append(candidate["title"])
+                if candidate["poster_url"]:
+                    MOVIE_DB_POSTER_HINTS[normalize_movie_lookup_title(candidate["title"])] = candidate[
+                        "poster_url"
+                    ]
         titles.extend(extract_movie_db_titles_from_html(search_html))
     except Exception:
         pass
@@ -1422,7 +1473,7 @@ def validate_movie_title_with_movie_db(movie_title):
     best_score = 0.0
     for candidate in unique_titles:
         if movie_titles_equivalent(movie_title, candidate):
-            return True, candidate, ""
+            return True, cleanup_movie_display_title(candidate), ""
         score = movie_title_match_score(movie_title, candidate)
         if score > best_score:
             best_score = score
@@ -1435,14 +1486,14 @@ def validate_movie_title_with_movie_db(movie_title):
         refreshed_titles = []
     for candidate in refreshed_titles:
         if movie_titles_equivalent(movie_title, candidate):
-            return True, candidate, ""
+            return True, cleanup_movie_display_title(candidate), ""
         score = movie_title_match_score(movie_title, candidate)
         if score > best_score:
             best_score = score
             best_candidate = candidate
 
     if best_candidate and best_score >= 0.84:
-        return True, best_candidate, ""
+        return True, cleanup_movie_display_title(best_candidate), ""
 
     return (
         False,
@@ -1490,8 +1541,28 @@ def lookup_movie_cover_url(movie_title):
         return "", ""
 
     query = quote_plus(movie_title)
+    movie_db_url = MOVIE_DB_SEARCH_URL.format(query=query)
     tmdb_url = f"https://www.themoviedb.org/search?query={query}"
     imdb_url = f"https://www.imdb.com/find/?q={query}&s=tt"
+
+    hint = MOVIE_DB_POSTER_HINTS.get(normalize_movie_lookup_title(movie_title))
+    if hint:
+        return hint, "movie.nhely.hu"
+
+    try:
+        search_html = fetch_text_url(movie_db_url, timeout=8)
+        best_candidate = None
+        best_score = 0.0
+        for candidate in extract_movie_db_search_candidates(search_html):
+            score = movie_title_match_score(movie_title, candidate["title"])
+            if score > best_score:
+                best_score = score
+                best_candidate = candidate
+        if best_candidate and best_candidate["poster_url"] and best_score >= 0.84:
+            MOVIE_DB_POSTER_HINTS[normalize_movie_lookup_title(movie_title)] = best_candidate["poster_url"]
+            return best_candidate["poster_url"], "movie.nhely.hu"
+    except Exception:
+        pass
 
     try:
         search_html = fetch_text_url(tmdb_url)
