@@ -119,6 +119,10 @@ MOVIE_DB_TITLES_CACHE = {
     "titles": [],
 }
 MOVIE_DB_POSTER_HINTS = {}
+MOVIE_DB_INDEX_CACHE = {
+    "fetched_at": 0.0,
+    "entries": [],
+}
 DEFAULT_HTTP_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (X11; Linux x86_64) "
@@ -1402,18 +1406,10 @@ def fetch_movie_db_titles(force_refresh=False):
     ):
         return MOVIE_DB_TITLES_CACHE["titles"]
 
-    base_html = fetch_text_url(MOVIE_DB_BASE_URL, timeout=8)
-    titles = set(extract_movie_db_titles_from_html(base_html))
-
-    extra_pages = set(
-        re.findall(r"""href=["'](?:https?://movie\.nhely\.hu)?(/page/\d+/?)["']""", base_html, re.IGNORECASE)
-    )
-    for path in sorted(extra_pages)[:5]:
-        try:
-            page_html = fetch_text_url(f"http://movie.nhely.hu{path}", timeout=6)
-            titles.update(extract_movie_db_titles_from_html(page_html))
-        except Exception:
-            continue
+    titles = {entry["title"] for entry in fetch_movie_db_index_entries(force_refresh=force_refresh)}
+    if not titles:
+        base_html = fetch_text_url(MOVIE_DB_BASE_URL, timeout=8)
+        titles = set(extract_movie_db_titles_from_html(base_html))
 
     cleaned_titles = sorted(title for title in titles if len(normalize_movie_lookup_title(title)) >= 2)
     MOVIE_DB_TITLES_CACHE["titles"] = cleaned_titles
@@ -1563,28 +1559,105 @@ def fetch_movie_db_candidate_via_search_api(movie_title):
     return None
 
 
-def find_best_movie_db_candidate(movie_title):
-    query = quote_plus(movie_title)
-    candidates = []
-
-    search_api_candidate = fetch_movie_db_candidate_via_search_api(movie_title)
-    if search_api_candidate:
-        return search_api_candidate
-
-    try:
-        candidates.extend(
-            extract_movie_db_candidates_from_api(
-                fetch_json_url(MOVIE_DB_API_SEARCH_URL.format(query=query), timeout=8)
-            )
+def extract_movie_db_index_entries(source_html):
+    entries = []
+    pattern = re.compile(
+        r"""<li\s+class=["']thumbnail["'][^>]*>\s*<a\s+href=["']([^"']+)["'][^>]*>.*?<img[^>]+src=["']([^"']+)["'][^>]*>.*?<div\s+class=["']thumbnail-text["']>\s*(.*?)\s*</div>""",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for href, image_src, title_html in pattern.findall(source_html):
+        raw_title = html.unescape(strip_html_tags(title_html)).strip()
+        title = cleanup_movie_display_title(re.sub(r"\s+", " ", raw_title))
+        if len(title) < 2:
+            continue
+        entries.append(
+            {
+                "title": title,
+                "href": urljoin(MOVIE_DB_BASE_URL, href.strip()),
+                "poster_url": urljoin(MOVIE_DB_BASE_URL, image_src.strip()),
+                "movie_category": "",
+                "movie_description": "",
+            }
         )
-    except Exception:
-        pass
+    return entries
 
+
+def fetch_movie_db_index_entries(force_refresh=False):
+    now_ts = time.time()
+    if (
+        not force_refresh
+        and MOVIE_DB_INDEX_CACHE["entries"]
+        and (now_ts - MOVIE_DB_INDEX_CACHE["fetched_at"]) < MOVIE_DB_CACHE_SECONDS
+    ):
+        return MOVIE_DB_INDEX_CACHE["entries"]
+
+    base_html = fetch_text_url(MOVIE_DB_BASE_URL, timeout=10)
+    entries = extract_movie_db_index_entries(base_html)
+    MOVIE_DB_INDEX_CACHE["entries"] = entries
+    MOVIE_DB_INDEX_CACHE["fetched_at"] = now_ts
+    return entries
+
+
+def extract_movie_db_detail_metadata(detail_html):
+    genre_match = re.search(
+        r"""<p><b>M&#369;faj\(ok\):</b>\s*(.*?)</p>""",
+        detail_html,
+        re.IGNORECASE | re.DOTALL,
+    )
+    category = html.unescape(strip_html_tags(genre_match.group(1))).strip() if genre_match else ""
+
+    desc_match = re.search(
+        r"""<div\s+class=description>\s*<p>\s*<b>Tartalom:</b>\s*(.*?)</p>""",
+        detail_html,
+        re.IGNORECASE | re.DOTALL,
+    )
+    description = html.unescape(strip_html_tags(desc_match.group(1))).strip() if desc_match else ""
+    description = sanitize_description(description)
+
+    poster_match = re.search(
+        r"""<img\s+class=["']poster["']\s+src=["']([^"']+)["']""",
+        detail_html,
+        re.IGNORECASE,
+    )
+    poster_url = urljoin(MOVIE_DB_BASE_URL, poster_match.group(1).strip()) if poster_match else ""
+
+    return {
+        "movie_category": category,
+        "movie_description": description,
+        "poster_url": poster_url,
+        "poster_source": "movie.nhely.hu",
+    }
+
+
+def enrich_movie_db_candidate(candidate):
+    href = (candidate.get("href") or "").strip()
+    if not href:
+        return candidate
     try:
-        search_html = fetch_text_url(MOVIE_DB_SEARCH_URL.format(query=query), timeout=8)
-        candidates.extend(extract_movie_db_search_candidates(search_html))
+        detail_html = fetch_text_url(href, timeout=10)
     except Exception:
-        pass
+        return candidate
+
+    detail = extract_movie_db_detail_metadata(detail_html)
+    if detail.get("poster_url"):
+        candidate["poster_url"] = detail["poster_url"]
+    if detail.get("movie_category"):
+        candidate["movie_category"] = detail["movie_category"]
+    if detail.get("movie_description"):
+        candidate["movie_description"] = detail["movie_description"]
+    candidate["poster_source"] = "movie.nhely.hu"
+    return candidate
+
+
+def find_best_movie_db_candidate(movie_title):
+    candidates = list(fetch_movie_db_index_entries())
+    if not candidates:
+        query = quote_plus(movie_title)
+        try:
+            search_html = fetch_text_url(MOVIE_DB_SEARCH_URL.format(query=query), timeout=8)
+            candidates.extend(extract_movie_db_search_candidates(search_html))
+        except Exception:
+            pass
 
     best = None
     best_score = 0.0
@@ -1598,19 +1671,10 @@ def find_best_movie_db_candidate(movie_title):
         return None
 
     best["title"] = cleanup_movie_display_title(best.get("title", ""))
-    if not best.get("poster_url") and best.get("href"):
-        try:
-            detail_html = fetch_text_url(best["href"], timeout=8)
-            detail_poster = extract_og_image_url(detail_html)
-            if detail_poster:
-                best["poster_url"] = urljoin(MOVIE_DB_BASE_URL, detail_poster)
-        except Exception:
-            pass
-    if best.get("poster_url"):
-        best["poster_url"] = urljoin(MOVIE_DB_BASE_URL, best["poster_url"])
     best.setdefault("movie_category", "")
     best.setdefault("movie_description", "")
-    return best
+    best.setdefault("poster_source", "movie.nhely.hu")
+    return enrich_movie_db_candidate(best)
 
 
 def validate_movie_title_with_movie_db(movie_title):
@@ -1866,6 +1930,18 @@ def lookup_movie_metadata(movie_title):
         imdb = extract_imdb_metadata(movie_title)
         if imdb:
             return imdb
+    except Exception:
+        pass
+
+    try:
+        candidate = find_best_movie_db_candidate(movie_title)
+        if candidate:
+            return {
+                "poster_url": candidate.get("poster_url", ""),
+                "movie_category": candidate.get("movie_category", ""),
+                "movie_description": sanitize_description(candidate.get("movie_description", "")),
+                "poster_source": "movie.nhely.hu",
+            }
     except Exception:
         pass
 
