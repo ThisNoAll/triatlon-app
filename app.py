@@ -8,6 +8,7 @@ import urllib.request
 import html
 import time
 import difflib
+import json
 from types import SimpleNamespace
 from functools import wraps
 from html.parser import HTMLParser
@@ -109,6 +110,7 @@ MOVIE_NIGHT_STATUS_COMING = "coming"
 MOVIE_NIGHT_STATUS_NOT_COMING = "not_coming"
 MOVIE_DB_BASE_URL = "http://movie.nhely.hu/"
 MOVIE_DB_SEARCH_URL = "http://movie.nhely.hu/?s={query}"
+MOVIE_DB_API_SEARCH_URL = "http://movie.nhely.hu/wp-json/wp/v2/posts?search={query}&per_page=20&_embed=1"
 MOVIE_DB_CACHE_SECONDS = 6 * 60 * 60
 MOVIE_DB_TITLES_CACHE = {
     "fetched_at": 0.0,
@@ -1247,6 +1249,16 @@ def fetch_text_url(url, timeout=4):
     return raw.decode("utf-8", errors="ignore")
 
 
+def fetch_json_url(url, timeout=6):
+    request_obj = urllib.request.Request(
+        url,
+        headers={**DEFAULT_HTTP_HEADERS, "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(request_obj, timeout=timeout) as response:
+        raw = response.read()
+    return json.loads(raw.decode("utf-8", errors="ignore"))
+
+
 def strip_html_tags(value):
     return re.sub(r"<[^>]+>", " ", value or "")
 
@@ -1445,6 +1457,34 @@ def extract_movie_db_search_candidates(source_html):
     return candidates
 
 
+def extract_movie_db_candidates_from_api(items):
+    candidates = []
+    for item in (items or []):
+        if not isinstance(item, dict):
+            continue
+        title_obj = item.get("title") or {}
+        raw_title = html.unescape(strip_html_tags(title_obj.get("rendered") or "")).strip()
+        title = cleanup_movie_display_title(re.sub(r"\s+", " ", raw_title))
+        if len(title) < 2:
+            continue
+
+        href = (item.get("link") or "").strip()
+        poster_url = ""
+        embedded = item.get("_embedded") or {}
+        media_list = embedded.get("wp:featuredmedia") or []
+        if media_list and isinstance(media_list[0], dict):
+            poster_url = (media_list[0].get("source_url") or "").strip()
+
+        candidates.append(
+            {
+                "title": title,
+                "poster_url": poster_url,
+                "href": href,
+            }
+        )
+    return candidates
+
+
 def validate_movie_title_with_movie_db(movie_title):
     if app.config.get("TESTING"):
         return True, movie_title, ""
@@ -1455,10 +1495,24 @@ def validate_movie_title_with_movie_db(movie_title):
         return False, "", "A filmadatbázis jelenleg nem elérhető, próbáld újra később."
 
     try:
-        search_html = fetch_text_url(
-            MOVIE_DB_SEARCH_URL.format(query=quote_plus(movie_title)),
-            timeout=8,
+        api_candidates = extract_movie_db_candidates_from_api(
+            fetch_json_url(
+                MOVIE_DB_API_SEARCH_URL.format(query=quote_plus(movie_title)),
+                timeout=8,
+            )
         )
+        for candidate in api_candidates:
+            if candidate["title"]:
+                titles.append(candidate["title"])
+                if candidate["poster_url"]:
+                    MOVIE_DB_POSTER_HINTS[normalize_movie_lookup_title(candidate["title"])] = candidate[
+                        "poster_url"
+                    ]
+    except Exception:
+        pass
+
+    try:
+        search_html = fetch_text_url(MOVIE_DB_SEARCH_URL.format(query=quote_plus(movie_title)), timeout=8)
         search_candidates = extract_movie_db_search_candidates(search_html)
         for candidate in search_candidates:
             if candidate["title"]:
@@ -1559,6 +1613,27 @@ def lookup_movie_cover_url(movie_title):
     hint = MOVIE_DB_POSTER_HINTS.get(normalize_movie_lookup_title(movie_title))
     if hint:
         return hint, "movie.nhely.hu"
+
+    try:
+        api_candidates = extract_movie_db_candidates_from_api(
+            fetch_json_url(
+                MOVIE_DB_API_SEARCH_URL.format(query=quote_plus(movie_title)),
+                timeout=8,
+            )
+        )
+        best_candidate = None
+        best_score = 0.0
+        for candidate in api_candidates:
+            score = movie_title_match_score(movie_title, candidate["title"])
+            if score > best_score:
+                best_score = score
+                best_candidate = candidate
+        if best_candidate and best_candidate.get("poster_url") and best_score >= 0.78:
+            poster = urljoin(MOVIE_DB_BASE_URL, best_candidate["poster_url"])
+            MOVIE_DB_POSTER_HINTS[normalize_movie_lookup_title(movie_title)] = poster
+            return poster, "movie.nhely.hu"
+    except Exception:
+        pass
 
     try:
         search_html = fetch_text_url(movie_db_url, timeout=8)
