@@ -1849,11 +1849,8 @@ def extract_genres_from_json_ld(html_text):
     return ""
 
 
-def sanitize_description(value, limit=280):
-    text = re.sub(r"\s+", " ", (value or "").strip())
-    if len(text) <= limit:
-        return text
-    return text[: limit - 1].rstrip() + "…"
+def sanitize_description(value):
+    return re.sub(r"\s+", " ", (value or "").strip())
 
 
 def extract_tmdb_metadata(movie_title):
