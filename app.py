@@ -4229,7 +4229,7 @@ def movie_night_draw():
                     existing["id"],
                 ),
             )
-            flash(f"{name} vĂˇlasza frissĂ­tve lett.", "success")
+            flash(f"{name} válasza frissítve lett.", "success")
         else:
             execute(
                 """
@@ -4251,7 +4251,7 @@ def movie_night_draw():
                     now_str(),
                 ),
             )
-            flash(f"{name} sikeresen rĂ¶gzĂ­tette a vĂˇlaszĂˇt.", "success")
+            flash(f"{name} sikeresen rögzítette a válaszát.", "success")
 
         entries = get_movie_night_entries(cycle_key)
         if len(entries) == len(MOVIE_NIGHT_ALLOWED_NAMES):
