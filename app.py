@@ -111,6 +111,8 @@ MOVIE_NIGHT_STATUS_NOT_COMING = "not_coming"
 MOVIE_DB_BASE_URL = "http://movie.nhely.hu/"
 MOVIE_DB_SEARCH_URL = "http://movie.nhely.hu/?s={query}"
 MOVIE_DB_API_SEARCH_URL = "http://movie.nhely.hu/wp-json/wp/v2/posts?search={query}&per_page=20&_embed=1"
+MOVIE_DB_API_INDEX_SEARCH_URL = "http://movie.nhely.hu/wp-json/wp/v2/search?search={query}&per_page=20&type=post"
+MOVIE_DB_API_POST_DETAIL_URL = "http://movie.nhely.hu/wp-json/wp/v2/posts/{post_id}?_embed=1"
 MOVIE_DB_CACHE_SECONDS = 6 * 60 * 60
 MOVIE_DB_TITLES_CACHE = {
     "fetched_at": 0.0,
@@ -1523,9 +1525,51 @@ def extract_movie_db_candidates_from_api(items):
     return candidates
 
 
+def fetch_movie_db_candidate_via_search_api(movie_title):
+    query = quote_plus(movie_title)
+    try:
+        results = fetch_json_url(MOVIE_DB_API_INDEX_SEARCH_URL.format(query=query), timeout=8)
+    except Exception:
+        return None
+
+    best = None
+    best_score = 0.0
+    for item in (results or []):
+        if not isinstance(item, dict):
+            continue
+        post_id = item.get("id")
+        if not post_id:
+            continue
+        try:
+            detail = fetch_json_url(MOVIE_DB_API_POST_DETAIL_URL.format(post_id=post_id), timeout=8)
+        except Exception:
+            continue
+        detail_candidates = extract_movie_db_candidates_from_api([detail])
+        if not detail_candidates:
+            continue
+        candidate = detail_candidates[0]
+        score = movie_title_match_score(movie_title, candidate.get("title", ""))
+        if score > best_score:
+            best_score = score
+            best = candidate
+
+    if best and best_score >= 0.75:
+        best["title"] = cleanup_movie_display_title(best.get("title", ""))
+        if best.get("poster_url"):
+            best["poster_url"] = urljoin(MOVIE_DB_BASE_URL, best["poster_url"])
+        best.setdefault("movie_category", "")
+        best.setdefault("movie_description", "")
+        return best
+    return None
+
+
 def find_best_movie_db_candidate(movie_title):
     query = quote_plus(movie_title)
     candidates = []
+
+    search_api_candidate = fetch_movie_db_candidate_via_search_api(movie_title)
+    if search_api_candidate:
+        return search_api_candidate
 
     try:
         candidates.extend(
