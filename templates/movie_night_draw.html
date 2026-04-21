@@ -52,11 +52,14 @@
         Peti, Jakab és Martin minden kedden filmestet tartanak.
         Aki jönni tud, az megad egy filmet; aki nem tud jönni, az ezt jelzi, és akkor nem kell filmet választania.
         Amint mindhárman leadták a heti válaszukat, a rendszer kisorsol egy nyertest a beírt filmek közül.
+        Ha valaki legkésőbb kedd 17:00-ig nem reagál, a rendszer automatikusan úgy veszi, hogy nem tud jönni,
+        és lezárja a heti szavazást a beérkezett válaszok alapján (akár 1 fővel is).
         <strong>A filmet kizárólag erről a listáról lehet kiválasztani:</strong>
         <a href="http://movie.nhely.hu/" target="_blank" rel="noopener noreferrer">movie.nhely.hu</a>.
       </p>
       <div class="meta">
         <span class="pill">Aktív hét kezdete: {{ cycle_key }}</span>
+        <span class="pill">Heti határidő: {{ deadline_at }} (kedd)</span>
         <span class="pill">Következő újraindulás: {{ next_reset }} (szerda)</span>
       </div>
 

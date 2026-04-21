@@ -1132,6 +1132,72 @@ def movie_night_next_reset_label(cycle_key):
     return next_reset.strftime("%Y-%m-%d")
 
 
+def movie_night_deadline(cycle_key):
+    cycle_start = datetime.strptime(cycle_key, "%Y-%m-%d")
+    return (cycle_start + timedelta(days=6)).replace(hour=17, minute=0, second=0, microsecond=0)
+
+
+def finalize_movie_night_cycle(cycle_key):
+    entries = get_movie_night_entries(cycle_key)
+    now_value = now_str()
+    submitted_names = {row["participant_name"] for row in entries}
+    missing_names = [name for name in MOVIE_NIGHT_ALLOWED_NAMES if name not in submitted_names]
+
+    for name in missing_names:
+        execute(
+            """
+            INSERT INTO movie_night_entries (
+                cycle_key, participant_name, attendance_status, movie_title, poster_url, poster_source, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                cycle_key,
+                name,
+                MOVIE_NIGHT_STATUS_NOT_COMING,
+                "",
+                "",
+                "",
+                now_value,
+                now_value,
+            ),
+        )
+
+    final_entries = get_movie_night_entries(cycle_key)
+    eligible_entries = [
+        row
+        for row in final_entries
+        if row["attendance_status"] == MOVIE_NIGHT_STATUS_COMING and (row["movie_title"] or "").strip()
+    ]
+    if eligible_entries:
+        selected = random.choice(eligible_entries)
+        winner_name = selected["participant_name"]
+        winner_movie = selected["movie_title"]
+    else:
+        winner_name = "Nincs vetítés"
+        winner_movie = "Ezen a héten nem érkezett érvényes filmválasztás."
+
+    execute(
+        """
+        INSERT INTO movie_night_draws (cycle_key, winner_name, winner_movie, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (cycle_key, winner_name, winner_movie, now_value),
+    )
+    return get_movie_night_draw(cycle_key)
+
+
+def finalize_movie_night_cycle_if_due(cycle_key, now=None):
+    draw = get_movie_night_draw(cycle_key)
+    if draw:
+        return draw
+
+    current = now or datetime.now()
+    if current >= movie_night_deadline(cycle_key):
+        return finalize_movie_night_cycle(cycle_key)
+    return None
+
+
 def get_movie_night_entries(cycle_key):
     rows = query_all(
         """
@@ -3381,9 +3447,11 @@ def finalize_team_names_for_event(event_id):
 @app.route("/film-est-sorsolo", methods=["GET", "POST"])
 def movie_night_draw():
     cycle_key = movie_night_cycle_key()
-    draw = get_movie_night_draw(cycle_key)
+    draw = finalize_movie_night_cycle_if_due(cycle_key)
+    deadline_at = movie_night_deadline(cycle_key)
 
     if request.method == "POST":
+        draw = draw or finalize_movie_night_cycle_if_due(cycle_key)
         name = (request.form.get("name") or "").strip()
         attendance_status = (request.form.get("attendance_status") or MOVIE_NIGHT_STATUS_COMING).strip()
         movie_title = " ".join((request.form.get("movie_title") or "").split())
@@ -3500,6 +3568,7 @@ def movie_night_draw():
         draw=draw,
         cycle_key=cycle_key,
         next_reset=movie_night_next_reset_label(cycle_key),
+        deadline_at=deadline_at.strftime("%Y-%m-%d %H:%M"),
         missing_names=missing_names,
     )
 

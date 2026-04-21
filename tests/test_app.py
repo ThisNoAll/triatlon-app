@@ -719,6 +719,44 @@ class TriatlonAppTests(unittest.TestCase):
         self.assertNotIn("Old Movie", html)
         self.assertIn("Még nincs beküldés", html)
 
+    def test_movie_night_auto_closes_after_tuesday_1700_with_partial_votes(self):
+        with self.app.app_context():
+            cycle_key = app_module.movie_night_cycle_key()
+            app_module.execute(
+                """
+                INSERT INTO movie_night_entries (
+                    cycle_key, participant_name, attendance_status, movie_title, poster_url, poster_source, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    cycle_key,
+                    "Jakab",
+                    app_module.MOVIE_NIGHT_STATUS_COMING,
+                    "Interstellar",
+                    "",
+                    "",
+                    "2026-03-21 10:00:00",
+                    "2026-03-21 10:00:00",
+                ),
+            )
+
+            deadline = app_module.movie_night_deadline(cycle_key)
+            draw = app_module.finalize_movie_night_cycle_if_due(
+                cycle_key,
+                now=deadline + timedelta(minutes=1),
+            )
+            self.assertIsNotNone(draw)
+
+            entries = app_module.get_movie_night_entries(cycle_key)
+            self.assertEqual(len(entries), 3)
+            status_by_name = {row["participant_name"]: row["attendance_status"] for row in entries}
+            self.assertEqual(status_by_name["Jakab"], app_module.MOVIE_NIGHT_STATUS_COMING)
+            self.assertEqual(status_by_name["Peti"], app_module.MOVIE_NIGHT_STATUS_NOT_COMING)
+            self.assertEqual(status_by_name["Martin"], app_module.MOVIE_NIGHT_STATUS_NOT_COMING)
+            self.assertEqual(draw["winner_name"], "Jakab")
+            self.assertEqual(draw["winner_movie"], "Interstellar")
+
 if __name__ == "__main__":
     unittest.main()
 
