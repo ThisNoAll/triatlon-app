@@ -1741,102 +1741,145 @@ def extract_imdb_title_path(html):
     return match.group(1)
 
 
-def lookup_movie_cover_url(movie_title):
-    if app.config.get("TESTING"):
-        return "", ""
+def extract_meta_content(html_text, attr_name, attr_value):
+    pattern = rf"""<meta[^>]+{attr_name}=["']{re.escape(attr_value)}["'][^>]+content=["']([^"']+)["']"""
+    match = re.search(pattern, html_text, re.IGNORECASE)
+    return html.unescape(match.group(1).strip()) if match else ""
 
-    best_candidate = find_best_movie_db_candidate(movie_title)
-    if best_candidate and best_candidate.get("poster_url"):
-        poster = best_candidate["poster_url"]
-        MOVIE_DB_POSTER_HINTS[normalize_movie_lookup_title(movie_title)] = poster
-        return poster, "movie.nhely.hu"
 
+def extract_json_ld_blocks(html_text):
+    blocks = []
+    for block in re.findall(
+        r"""<script[^>]+type=["']application/ld\+json["'][^>]*>(.*?)</script>""",
+        html_text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        raw = (block or "").strip()
+        if not raw:
+            continue
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            continue
+        if isinstance(parsed, list):
+            blocks.extend(item for item in parsed if isinstance(item, dict))
+        elif isinstance(parsed, dict):
+            blocks.append(parsed)
+    return blocks
+
+
+def extract_genres_from_json_ld(html_text):
+    for item in extract_json_ld_blocks(html_text):
+        movie_type = item.get("@type")
+        if isinstance(movie_type, list):
+            is_movie = "Movie" in movie_type
+        else:
+            is_movie = movie_type == "Movie"
+        if not is_movie:
+            continue
+        genre = item.get("genre")
+        if isinstance(genre, list):
+            return ", ".join(str(g).strip() for g in genre if str(g).strip())
+        if isinstance(genre, str):
+            return genre.strip()
+    return ""
+
+
+def sanitize_description(value, limit=280):
+    text = re.sub(r"\s+", " ", (value or "").strip())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def extract_tmdb_metadata(movie_title):
     query = quote_plus(movie_title)
-    movie_db_url = MOVIE_DB_SEARCH_URL.format(query=query)
-    tmdb_url = f"https://www.themoviedb.org/search?query={query}"
-    imdb_url = f"https://www.imdb.com/find/?q={query}&s=tt"
+    search_url = f"https://www.themoviedb.org/search/movie?query={query}&language=hu-HU"
+    search_html = fetch_text_url(search_url, timeout=8)
+    movie_path = extract_tmdb_movie_path(search_html)
+    if not movie_path:
+        return {}
 
-    hint = MOVIE_DB_POSTER_HINTS.get(normalize_movie_lookup_title(movie_title))
-    if hint:
-        return hint, "movie.nhely.hu"
+    detail_url = f"https://www.themoviedb.org{movie_path}"
+    detail_url = f"{detail_url}&language=hu-HU" if "?" in detail_url else f"{detail_url}?language=hu-HU"
+    detail_html = fetch_text_url(detail_url, timeout=8)
+
+    poster_url = extract_og_image_url(detail_html)
+    category = extract_genres_from_json_ld(detail_html)
+    description = extract_meta_content(detail_html, "property", "og:description")
+    if not description:
+        description = extract_meta_content(detail_html, "name", "description")
+
+    if not poster_url and not category and not description:
+        return {}
+    return {
+        "poster_url": poster_url,
+        "movie_category": category,
+        "movie_description": sanitize_description(description),
+        "poster_source": "tmdb",
+    }
+
+
+def extract_imdb_metadata(movie_title):
+    query = quote_plus(movie_title)
+    search_html = fetch_text_url(f"https://www.imdb.com/find/?q={query}&s=tt", timeout=8)
+    title_path = extract_imdb_title_path(search_html)
+    if not title_path:
+        return {}
+
+    detail_html = fetch_text_url(f"https://www.imdb.com{title_path}", timeout=8)
+    poster_url = extract_og_image_url(detail_html)
+    if not poster_url:
+        poster_url = extract_imdb_inline_poster_url(detail_html)
+    category = extract_genres_from_json_ld(detail_html)
+    description = extract_meta_content(detail_html, "property", "og:description")
+    if not description:
+        description = extract_meta_content(detail_html, "name", "description")
+
+    if not poster_url and not category and not description:
+        return {}
+    return {
+        "poster_url": poster_url,
+        "movie_category": category,
+        "movie_description": sanitize_description(description),
+        "poster_source": "imdb",
+    }
+
+
+def lookup_movie_metadata(movie_title):
+    if app.config.get("TESTING"):
+        return {
+            "poster_url": "",
+            "movie_category": "",
+            "movie_description": "",
+            "poster_source": "",
+        }
 
     try:
-        api_candidates = extract_movie_db_candidates_from_api(
-            fetch_json_url(
-                MOVIE_DB_API_SEARCH_URL.format(query=quote_plus(movie_title)),
-                timeout=8,
-            )
-        )
-        best_candidate = None
-        best_score = 0.0
-        for candidate in api_candidates:
-            score = movie_title_match_score(movie_title, candidate["title"])
-            if score > best_score:
-                best_score = score
-                best_candidate = candidate
-        if best_candidate and best_candidate.get("poster_url") and best_score >= 0.78:
-            poster = urljoin(MOVIE_DB_BASE_URL, best_candidate["poster_url"])
-            MOVIE_DB_POSTER_HINTS[normalize_movie_lookup_title(movie_title)] = poster
-            return poster, "movie.nhely.hu"
+        tmdb = extract_tmdb_metadata(movie_title)
+        if tmdb:
+            return tmdb
     except Exception:
         pass
 
     try:
-        search_html = fetch_text_url(movie_db_url, timeout=8)
-        best_candidate = None
-        best_score = 0.0
-        for candidate in extract_movie_db_search_candidates(search_html):
-            score = movie_title_match_score(movie_title, candidate["title"])
-            if score > best_score:
-                best_score = score
-                best_candidate = candidate
-        if best_candidate and best_candidate["poster_url"] and best_score >= 0.84:
-            MOVIE_DB_POSTER_HINTS[normalize_movie_lookup_title(movie_title)] = best_candidate["poster_url"]
-            return best_candidate["poster_url"], "movie.nhely.hu"
-        if best_candidate and best_candidate["href"] and best_score >= 0.84:
-            detail_html = fetch_text_url(best_candidate["href"], timeout=8)
-            detail_poster = extract_og_image_url(detail_html)
-            if not detail_poster:
-                detail_match = re.search(
-                    r"""<img[^>]+(?:src|data-src)=["']([^"']+)["'][^>]*class=["'][^"']*(?:wp-post-image|attachment)[^"']*["']""",
-                    detail_html,
-                    re.IGNORECASE,
-                )
-                if detail_match:
-                    detail_poster = urljoin(MOVIE_DB_BASE_URL, detail_match.group(1).strip())
-            if detail_poster:
-                detail_poster = urljoin(MOVIE_DB_BASE_URL, detail_poster)
-                MOVIE_DB_POSTER_HINTS[normalize_movie_lookup_title(movie_title)] = detail_poster
-                return detail_poster, "movie.nhely.hu"
+        imdb = extract_imdb_metadata(movie_title)
+        if imdb:
+            return imdb
     except Exception:
         pass
 
-    try:
-        search_html = fetch_text_url(tmdb_url)
-        movie_path = extract_tmdb_movie_path(search_html)
-        if movie_path:
-            movie_html = fetch_text_url(f"https://www.themoviedb.org{movie_path}")
-            poster_url = extract_og_image_url(movie_html)
-            if poster_url:
-                return poster_url, "tmdb"
-    except Exception:
-        pass
+    return {
+        "poster_url": "",
+        "movie_category": "",
+        "movie_description": "",
+        "poster_source": "",
+    }
 
-    try:
-        search_html = fetch_text_url(imdb_url)
-        title_path = extract_imdb_title_path(search_html)
-        if title_path:
-            title_html = fetch_text_url(f"https://www.imdb.com{title_path}")
-            poster_url = extract_og_image_url(title_html)
-            if poster_url:
-                return poster_url, "imdb"
-        poster_url = extract_imdb_inline_poster_url(search_html)
-        if poster_url:
-            return poster_url, "imdb"
-    except Exception:
-        pass
 
-    return "", ""
+def lookup_movie_cover_url(movie_title):
+    metadata = lookup_movie_metadata(movie_title)
+    return metadata.get("poster_url", ""), metadata.get("poster_source", "")
 
 
 def is_allowed_movie_cover_url(value):
@@ -1851,6 +1894,14 @@ def is_allowed_movie_cover_url(value):
         ".wp.com",
         "wordpress.com",
         ".wordpress.com",
+        "themoviedb.org",
+        ".themoviedb.org",
+        "tmdb.org",
+        ".tmdb.org",
+        "media-amazon.com",
+        ".media-amazon.com",
+        "imdb.com",
+        ".imdb.com",
     )
     return any(host == suffix.lstrip(".") or host.endswith(suffix) for suffix in allowed_suffixes)
 
@@ -1881,13 +1932,11 @@ def backfill_movie_night_missing_posters(cycle_key, entries):
         title = (entry["movie_title"] or "").strip()
         if not title:
             continue
-        best_candidate = find_best_movie_db_candidate(title)
-        poster_url = (best_candidate.get("poster_url") or "").strip() if best_candidate else ""
-        poster_source = "movie.nhely.hu" if poster_url else ""
-        movie_category = (best_candidate.get("movie_category") or "").strip() if best_candidate else ""
-        movie_description = (best_candidate.get("movie_description") or "").strip() if best_candidate else ""
-        if not poster_url:
-            poster_url, poster_source = lookup_movie_cover_url(title)
+        metadata = lookup_movie_metadata(title)
+        poster_url = (metadata.get("poster_url") or "").strip()
+        poster_source = (metadata.get("poster_source") or "").strip()
+        movie_category = (metadata.get("movie_category") or "").strip()
+        movie_description = (metadata.get("movie_description") or "").strip()
 
         if not poster_url and not movie_category and not movie_description:
             continue
@@ -4064,6 +4113,8 @@ def movie_night_draw():
             movie_title = ""
             poster_url = ""
             poster_source = ""
+            movie_category = ""
+            movie_description = ""
         else:
             is_valid_title, matched_title, validation_message, matched_details = validate_movie_title_with_movie_db(
                 movie_title
@@ -4072,12 +4123,11 @@ def movie_night_draw():
                 flash(validation_message, "error")
                 return redirect(url_for("movie_night_draw"))
             movie_title = matched_title
-            movie_category = (matched_details.get("movie_category") or "").strip() if matched_details else ""
-            movie_description = (matched_details.get("movie_description") or "").strip() if matched_details else ""
-            poster_url = (matched_details.get("poster_url") or "").strip() if matched_details else ""
-            poster_source = "movie.nhely.hu" if poster_url else ""
-            if not poster_url:
-                poster_url, poster_source = lookup_movie_cover_url(movie_title)
+            metadata = lookup_movie_metadata(movie_title)
+            poster_url = (metadata.get("poster_url") or "").strip()
+            poster_source = (metadata.get("poster_source") or "").strip()
+            movie_category = (metadata.get("movie_category") or "").strip()
+            movie_description = (metadata.get("movie_description") or "").strip()
 
         existing = query_one(
             """
