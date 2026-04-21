@@ -4,10 +4,11 @@ import sqlite3
 import random
 import unicodedata
 import uuid
+import urllib.request
 from types import SimpleNamespace
 from functools import wraps
 from html.parser import HTMLParser
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, quote_plus
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from flask import (
@@ -99,6 +100,13 @@ MOVIE_NIGHT_AVATAR_FILES = {
     "Peti": "movie_night_avatars/peti.jpg",
     "Jakab": "movie_night_avatars/jakab.jpg",
     "Martin": "movie_night_avatars/martin.jpg",
+}
+DEFAULT_HTTP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
 }
 
 DISCIPLINE_IMAGE_UPLOAD_DIR = os.path.join(PERSIST_STATIC_DIR, "uploads", "discipline_images")
@@ -986,6 +994,8 @@ def ensure_movie_night_schema(db):
                     cycle_key TEXT NOT NULL,
                     participant_name TEXT NOT NULL,
                     movie_title TEXT NOT NULL,
+                    poster_url TEXT,
+                    poster_source TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(cycle_key, participant_name)
@@ -1013,15 +1023,17 @@ def ensure_movie_night_schema(db):
     else:
         db.executescript(
             """
-            CREATE TABLE IF NOT EXISTS movie_night_entries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                cycle_key TEXT NOT NULL,
-                participant_name TEXT NOT NULL,
-                movie_title TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                UNIQUE(cycle_key, participant_name)
-            );
+                CREATE TABLE IF NOT EXISTS movie_night_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cycle_key TEXT NOT NULL,
+                    participant_name TEXT NOT NULL,
+                    movie_title TEXT NOT NULL,
+                    poster_url TEXT,
+                    poster_source TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(cycle_key, participant_name)
+                );
 
             CREATE TABLE IF NOT EXISTS movie_night_draws (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1035,6 +1047,23 @@ def ensure_movie_night_schema(db):
             ON movie_night_entries (cycle_key, participant_name);
             """
         )
+    if get_database_engine() == "postgres":
+        rows = query_all(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'movie_night_entries'
+            """
+        )
+        columns = {row["column_name"] for row in rows}
+    else:
+        columns = {
+            row["name"] for row in db.execute("PRAGMA table_info(movie_night_entries)").fetchall()
+        }
+    if "poster_url" not in columns:
+        execute("ALTER TABLE movie_night_entries ADD COLUMN poster_url TEXT")
+    if "poster_source" not in columns:
+        execute("ALTER TABLE movie_night_entries ADD COLUMN poster_source TEXT")
 
 
 @app.before_request
@@ -1090,7 +1119,7 @@ def movie_night_next_reset_label(cycle_key):
 def get_movie_night_entries(cycle_key):
     rows = query_all(
         """
-        SELECT participant_name, movie_title, created_at, updated_at
+        SELECT participant_name, movie_title, poster_url, poster_source, created_at, updated_at
         FROM movie_night_entries
         WHERE cycle_key = ?
         """,
@@ -1115,6 +1144,63 @@ def get_movie_night_draw(cycle_key):
         """,
         (cycle_key,),
     )
+
+
+def fetch_text_url(url, timeout=4):
+    request_obj = urllib.request.Request(url, headers=DEFAULT_HTTP_HEADERS)
+    with urllib.request.urlopen(request_obj, timeout=timeout) as response:
+        raw = response.read()
+    return raw.decode("utf-8", errors="ignore")
+
+
+def extract_tmdb_poster_url(html):
+    match = re.search(
+        r"""(?:"|')(https?://(?:image|media)\.tmdb\.org/t/p/[^"']+|/t/p/[^"']+)(?:"|')""",
+        html,
+        re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    url = match.group(1)
+    if url.startswith("/t/p/"):
+        return f"https://image.tmdb.org{url}"
+    return url
+
+
+def extract_imdb_poster_url(html):
+    match = re.search(
+        r"""https://m\.media-amazon\.com/images/M/[^"'\s>]+\.(?:jpg|jpeg|png)""",
+        html,
+        re.IGNORECASE,
+    )
+    return match.group(0) if match else ""
+
+
+def lookup_movie_cover_url(movie_title):
+    if app.config.get("TESTING"):
+        return "", ""
+
+    query = quote_plus(movie_title)
+    tmdb_url = f"https://www.themoviedb.org/search?query={query}"
+    imdb_url = f"https://www.imdb.com/find/?q={query}&s=tt"
+
+    try:
+        html = fetch_text_url(tmdb_url)
+        poster_url = extract_tmdb_poster_url(html)
+        if poster_url:
+            return poster_url, "tmdb"
+    except Exception:
+        pass
+
+    try:
+        html = fetch_text_url(imdb_url)
+        poster_url = extract_imdb_poster_url(html)
+        if poster_url:
+            return poster_url, "imdb"
+    except Exception:
+        pass
+
+    return "", ""
 
 
 ALLOWED_DESCRIPTION_TAGS = {"p", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li", "a", "blockquote"}
@@ -3256,6 +3342,8 @@ def movie_night_draw():
             flash("Erre a hetre mar kisorsoltuk a filmet. Uj kor szerdan indul.", "info")
             return redirect(url_for("movie_night_draw"))
 
+        poster_url, poster_source = lookup_movie_cover_url(movie_title)
+
         existing = query_one(
             """
             SELECT id
@@ -3269,19 +3357,21 @@ def movie_night_draw():
             execute(
                 """
                 UPDATE movie_night_entries
-                SET movie_title = ?, updated_at = ?
+                SET movie_title = ?, poster_url = ?, poster_source = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (movie_title, now_str(), existing["id"]),
+                (movie_title, poster_url, poster_source, now_str(), existing["id"]),
             )
             flash(f"{name} filmje frissitve lett.", "success")
         else:
             execute(
                 """
-                INSERT INTO movie_night_entries (cycle_key, participant_name, movie_title, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO movie_night_entries (
+                    cycle_key, participant_name, movie_title, poster_url, poster_source, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (cycle_key, name, movie_title, now_str(), now_str()),
+                (cycle_key, name, movie_title, poster_url, poster_source, now_str(), now_str()),
             )
             flash(f"{name} sikeresen bekuldte a filmjet.", "success")
 
