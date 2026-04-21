@@ -24,8 +24,11 @@
     button { border:0; background:var(--primary); color:#fff; font-weight:700; cursor:pointer; }
     .section { margin-top:16px; border-top:1px solid var(--line); padding-top:16px; }
     .list { display:grid; gap:10px; }
-    .item { border:1px solid var(--line); border-radius:12px; padding:10px 12px; background:#f8fafc; }
-    .item strong { display:block; margin-bottom:2px; }
+    .item { border:1px solid var(--line); border-radius:14px; padding:10px 12px; background:#f8fafc; display:flex; align-items:center; gap:12px; }
+    .avatar { width:52px; height:52px; border-radius:50%; object-fit:cover; border:2px solid #d7e2f0; background:#e2e8f0; flex-shrink:0; }
+    .person { min-width:0; }
+    .person strong { display:block; margin-bottom:2px; font-size:28px; line-height:1; letter-spacing:-0.02em; }
+    .person span { color:#334155; }
     .draw { margin-top:12px; border-radius:14px; border:1px solid #bbf7d0; background:linear-gradient(135deg, #f0fdf4, #ecfeff); padding:14px; }
     .draw h2 { margin:0 0 6px; font-size:20px; }
     .wait { border:1px solid #fde68a; background:var(--warn-bg); color:var(--warn); border-radius:12px; padding:10px 12px; font-weight:700; }
@@ -75,12 +78,19 @@
           {% for name in allowed_names %}
             {% set entry = (entries | selectattr('participant_name', 'equalto', name) | list | first) %}
             <div class="item">
-              <strong>{{ name }}</strong>
-              {% if entry %}
-                <span>{{ entry["movie_title"] }}</span>
-              {% else %}
-                <span>Meg nincs bekuldes.</span>
-              {% endif %}
+              <img
+                class="avatar"
+                src="{{ url_for('static', filename=avatar_files.get(name, 'team_avatars/avatar-01.svg')) }}"
+                alt="{{ name }}"
+              >
+              <div class="person">
+                <strong>{{ name }}</strong>
+                {% if entry %}
+                  <span>{{ entry["movie_title"] }}</span>
+                {% else %}
+                  <span>Meg nincs bekuldes.</span>
+                {% endif %}
+              </div>
             </div>
           {% endfor %}
         </div>

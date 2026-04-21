@@ -95,6 +95,11 @@ TEAM_PAIRING_MIXED_CONFIRM = "mixed"
 TEAM_PAIRING_FIXED_ONLY = "fixed_only"
 TEAM_PAIRING_RANDOM_ONLY = "random_only"
 MOVIE_NIGHT_ALLOWED_NAMES = ("Peti", "Jakab", "Martin")
+MOVIE_NIGHT_AVATAR_FILES = {
+    "Peti": "movie_night_avatars/peti.jpg",
+    "Jakab": "movie_night_avatars/jakab.jpg",
+    "Martin": "movie_night_avatars/martin.jpg",
+}
 
 DISCIPLINE_IMAGE_UPLOAD_DIR = os.path.join(PERSIST_STATIC_DIR, "uploads", "discipline_images")
 ALLOWED_DISCIPLINE_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
@@ -3305,6 +3310,7 @@ def movie_night_draw():
     return render_template(
         "movie_night_draw.html",
         allowed_names=MOVIE_NIGHT_ALLOWED_NAMES,
+        avatar_files=MOVIE_NIGHT_AVATAR_FILES,
         entries=entries,
         draw=draw,
         cycle_key=cycle_key,
