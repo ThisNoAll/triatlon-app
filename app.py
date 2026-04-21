@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from flask import (
     Flask,
+    Response,
     abort,
     render_template,
     request,
@@ -1420,7 +1421,17 @@ def extract_movie_db_search_candidates(source_html):
             continue
 
         poster_url = ""
-        img_match = re.search(r"""<img[^>]+src=["']([^"']+)["']""", inner, re.IGNORECASE)
+        img_match = re.search(
+            r"""<img[^>]+(?:src|data-src)=["']([^"']+)["']""",
+            inner,
+            re.IGNORECASE,
+        )
+        if not img_match:
+            srcset_match = re.search(r"""<img[^>]+srcset=["']([^"']+)["']""", inner, re.IGNORECASE)
+            if srcset_match:
+                srcset_value = (srcset_match.group(1) or "").split(",")[0].strip().split(" ")[0].strip()
+                if srcset_value:
+                    img_match = re.match(r"(.+)", srcset_value)
         if img_match:
             poster_url = urljoin(MOVIE_DB_BASE_URL, img_match.group(1).strip())
 
@@ -1561,6 +1572,21 @@ def lookup_movie_cover_url(movie_title):
         if best_candidate and best_candidate["poster_url"] and best_score >= 0.84:
             MOVIE_DB_POSTER_HINTS[normalize_movie_lookup_title(movie_title)] = best_candidate["poster_url"]
             return best_candidate["poster_url"], "movie.nhely.hu"
+        if best_candidate and best_candidate["href"] and best_score >= 0.84:
+            detail_html = fetch_text_url(best_candidate["href"], timeout=8)
+            detail_poster = extract_og_image_url(detail_html)
+            if not detail_poster:
+                detail_match = re.search(
+                    r"""<img[^>]+(?:src|data-src)=["']([^"']+)["'][^>]*class=["'][^"']*(?:wp-post-image|attachment)[^"']*["']""",
+                    detail_html,
+                    re.IGNORECASE,
+                )
+                if detail_match:
+                    detail_poster = urljoin(MOVIE_DB_BASE_URL, detail_match.group(1).strip())
+            if detail_poster:
+                detail_poster = urljoin(MOVIE_DB_BASE_URL, detail_poster)
+                MOVIE_DB_POSTER_HINTS[normalize_movie_lookup_title(movie_title)] = detail_poster
+                return detail_poster, "movie.nhely.hu"
     except Exception:
         pass
 
@@ -1590,6 +1616,30 @@ def lookup_movie_cover_url(movie_title):
         pass
 
     return "", ""
+
+
+def is_allowed_movie_cover_url(value):
+    parsed = urlparse((value or "").strip())
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.netloc or "").lower()
+    return host == "movie.nhely.hu" or host.endswith(".movie.nhely.hu")
+
+
+@app.route("/movie-cover-proxy")
+def movie_cover_proxy():
+    source_url = (request.args.get("url") or "").strip()
+    if not is_allowed_movie_cover_url(source_url):
+        abort(400)
+
+    try:
+        request_obj = urllib.request.Request(source_url, headers=DEFAULT_HTTP_HEADERS)
+        with urllib.request.urlopen(request_obj, timeout=10) as response:
+            payload = response.read()
+            content_type = response.headers.get("Content-Type", "image/jpeg")
+        return Response(payload, mimetype=content_type)
+    except Exception:
+        abort(404)
 
 
 def backfill_movie_night_missing_posters(cycle_key, entries):
