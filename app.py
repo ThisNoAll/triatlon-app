@@ -101,6 +101,8 @@ MOVIE_NIGHT_AVATAR_FILES = {
     "Jakab": "movie_night_avatars/jakab.jpg",
     "Martin": "movie_night_avatars/martin.jpg",
 }
+MOVIE_NIGHT_STATUS_COMING = "coming"
+MOVIE_NIGHT_STATUS_NOT_COMING = "not_coming"
 DEFAULT_HTTP_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (X11; Linux x86_64) "
@@ -993,6 +995,7 @@ def ensure_movie_night_schema(db):
                     id SERIAL PRIMARY KEY,
                     cycle_key TEXT NOT NULL,
                     participant_name TEXT NOT NULL,
+                    attendance_status TEXT NOT NULL DEFAULT 'coming',
                     movie_title TEXT NOT NULL,
                     poster_url TEXT,
                     poster_source TEXT,
@@ -1027,6 +1030,7 @@ def ensure_movie_night_schema(db):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     cycle_key TEXT NOT NULL,
                     participant_name TEXT NOT NULL,
+                    attendance_status TEXT NOT NULL DEFAULT 'coming',
                     movie_title TEXT NOT NULL,
                     poster_url TEXT,
                     poster_source TEXT,
@@ -1064,6 +1068,18 @@ def ensure_movie_night_schema(db):
         execute("ALTER TABLE movie_night_entries ADD COLUMN poster_url TEXT")
     if "poster_source" not in columns:
         execute("ALTER TABLE movie_night_entries ADD COLUMN poster_source TEXT")
+    if "attendance_status" not in columns:
+        execute(
+            f"ALTER TABLE movie_night_entries ADD COLUMN attendance_status TEXT NOT NULL DEFAULT '{MOVIE_NIGHT_STATUS_COMING}'"
+        )
+    execute(
+        """
+        UPDATE movie_night_entries
+        SET attendance_status = ?
+        WHERE attendance_status IS NULL OR attendance_status = ''
+        """,
+        (MOVIE_NIGHT_STATUS_COMING,),
+    )
 
 
 @app.before_request
@@ -1119,7 +1135,7 @@ def movie_night_next_reset_label(cycle_key):
 def get_movie_night_entries(cycle_key):
     rows = query_all(
         """
-        SELECT participant_name, movie_title, poster_url, poster_source, created_at, updated_at
+        SELECT participant_name, attendance_status, movie_title, poster_url, poster_source, created_at, updated_at
         FROM movie_night_entries
         WHERE cycle_key = ?
         """,
@@ -1226,6 +1242,8 @@ def lookup_movie_cover_url(movie_title):
 def backfill_movie_night_missing_posters(cycle_key, entries):
     updated = False
     for entry in entries:
+        if entry["attendance_status"] == MOVIE_NIGHT_STATUS_NOT_COMING:
+            continue
         if entry["poster_url"]:
             continue
         title = (entry["movie_title"] or "").strip()
@@ -3367,25 +3385,35 @@ def movie_night_draw():
 
     if request.method == "POST":
         name = (request.form.get("name") or "").strip()
+        attendance_status = (request.form.get("attendance_status") or MOVIE_NIGHT_STATUS_COMING).strip()
         movie_title = " ".join((request.form.get("movie_title") or "").split())
 
         if name not in MOVIE_NIGHT_ALLOWED_NAMES:
-            flash("Csak Peti, Jakab vagy Martin valaszthato.", "error")
+            flash("Csak Peti, Jakab vagy Martin választható.", "error")
             return redirect(url_for("movie_night_draw"))
 
-        if not movie_title:
-            flash("Adj meg egy filmcimet.", "error")
+        if attendance_status not in (MOVIE_NIGHT_STATUS_COMING, MOVIE_NIGHT_STATUS_NOT_COMING):
+            flash("Érvénytelen részvételi állapot.", "error")
             return redirect(url_for("movie_night_draw"))
 
-        if len(movie_title) > 140:
-            flash("A filmcim legfeljebb 140 karakter lehet.", "error")
+        if attendance_status == MOVIE_NIGHT_STATUS_COMING and not movie_title:
+            flash("Ha tudsz jönni, adj meg egy filmcímet is.", "error")
+            return redirect(url_for("movie_night_draw"))
+
+        if attendance_status == MOVIE_NIGHT_STATUS_COMING and len(movie_title) > 140:
+            flash("A filmcím legfeljebb 140 karakter lehet.", "error")
             return redirect(url_for("movie_night_draw"))
 
         if draw:
-            flash("Erre a hetre mar kisorsoltuk a filmet. Uj kor szerdan indul.", "info")
+            flash("Erre a hétre már kisorsoltuk a filmet. Új kör szerdán indul.", "info")
             return redirect(url_for("movie_night_draw"))
 
-        poster_url, poster_source = lookup_movie_cover_url(movie_title)
+        if attendance_status == MOVIE_NIGHT_STATUS_NOT_COMING:
+            movie_title = ""
+            poster_url = ""
+            poster_source = ""
+        else:
+            poster_url, poster_source = lookup_movie_cover_url(movie_title)
 
         existing = query_one(
             """
@@ -3400,38 +3428,58 @@ def movie_night_draw():
             execute(
                 """
                 UPDATE movie_night_entries
-                SET movie_title = ?, poster_url = ?, poster_source = ?, updated_at = ?
+                SET attendance_status = ?, movie_title = ?, poster_url = ?, poster_source = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (movie_title, poster_url, poster_source, now_str(), existing["id"]),
+                (attendance_status, movie_title, poster_url, poster_source, now_str(), existing["id"]),
             )
-            flash(f"{name} filmje frissitve lett.", "success")
+            flash(f"{name} válasza frissítve lett.", "success")
         else:
             execute(
                 """
                 INSERT INTO movie_night_entries (
-                    cycle_key, participant_name, movie_title, poster_url, poster_source, created_at, updated_at
+                    cycle_key, participant_name, attendance_status, movie_title, poster_url, poster_source, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (cycle_key, name, movie_title, poster_url, poster_source, now_str(), now_str()),
+                (
+                    cycle_key,
+                    name,
+                    attendance_status,
+                    movie_title,
+                    poster_url,
+                    poster_source,
+                    now_str(),
+                    now_str(),
+                ),
             )
-            flash(f"{name} sikeresen bekuldte a filmjet.", "success")
+            flash(f"{name} sikeresen rögzítette a válaszát.", "success")
 
         entries = get_movie_night_entries(cycle_key)
         if len(entries) == len(MOVIE_NIGHT_ALLOWED_NAMES):
-            selected = random.choice(entries)
+            eligible_entries = [
+                row
+                for row in entries
+                if row["attendance_status"] == MOVIE_NIGHT_STATUS_COMING and (row["movie_title"] or "").strip()
+            ]
+            if eligible_entries:
+                selected = random.choice(eligible_entries)
+                winner_name = selected["participant_name"]
+                winner_movie = selected["movie_title"]
+            else:
+                winner_name = "Nincs vetítés"
+                winner_movie = "Ezen a héten mindhárom fő jelezte, hogy nem tud jönni."
             execute(
                 """
                 INSERT INTO movie_night_draws (cycle_key, winner_name, winner_movie, created_at)
                 VALUES (?, ?, ?, ?)
                 """,
-                (cycle_key, selected["participant_name"], selected["movie_title"], now_str()),
+                (cycle_key, winner_name, winner_movie, now_str()),
             )
-            flash(
-                f"A heti nyertes film: {selected['movie_title']} ({selected['participant_name']}).",
-                "success",
-            )
+            if eligible_entries:
+                flash(f"A heti nyertes film: {winner_movie} ({winner_name}).", "success")
+            else:
+                flash("Ezen a héten elmarad a vetítés.", "info")
 
         return redirect(url_for("movie_night_draw"))
 
@@ -3445,6 +3493,8 @@ def movie_night_draw():
     return render_template(
         "movie_night_draw.html",
         allowed_names=MOVIE_NIGHT_ALLOWED_NAMES,
+        status_coming=MOVIE_NIGHT_STATUS_COMING,
+        status_not_coming=MOVIE_NIGHT_STATUS_NOT_COMING,
         avatar_files=MOVIE_NIGHT_AVATAR_FILES,
         entries=entries,
         draw=draw,

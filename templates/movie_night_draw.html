@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Film est sorsolo</title>
+  <title>Filmest sorsoló</title>
   <style>
     :root { --bg:#f4f6fb; --card:#ffffff; --text:#1f2937; --muted:#64748b; --line:#dbe3ee; --primary:#0f172a; --ok:#166534; --ok-bg:#dcfce7; --warn:#854d0e; --warn-bg:#fef3c7; --err:#991b1b; --err-bg:#fee2e2; --radius:16px; --shadow:0 10px 30px rgba(15,23,42,.08); }
     * { box-sizing:border-box; }
@@ -22,6 +22,9 @@
     label { display:block; margin-bottom:6px; font-weight:700; font-size:14px; }
     input, select, button { width:100%; border-radius:12px; border:1px solid #cbd5e1; font-size:15px; padding:11px 12px; }
     button { border:0; background:var(--primary); color:#fff; font-weight:700; cursor:pointer; }
+    .intro { margin-top:10px; }
+    .intro strong { color:#0f172a; }
+    .intro a { color:#1d4ed8; font-weight:700; }
     .section { margin-top:16px; border-top:1px solid var(--line); padding-top:16px; }
     .list { display:grid; gap:10px; }
     .item { border:1px solid var(--line); border-radius:14px; padding:10px 12px; background:#f8fafc; display:flex; align-items:center; gap:12px; }
@@ -44,11 +47,17 @@
 <body>
   <main class="wrap">
     <section class="card">
-      <h1>Keddi film est sorsolo</h1>
-      <p>Peti, Jakab es Martin egy-egy filmet ad meg. Amikor mindharman kuldtek, a rendszer veletlenszeruen kisorsol egy nyertes filmet.</p>
+      <h1>Keddi filmest sorsoló</h1>
+      <p class="intro">
+        Peti, Jakab és Martin minden kedden filmestet tartanak.
+        Aki jönni tud, az megad egy filmet; aki nem tud jönni, az ezt jelzi, és akkor nem kell filmet választania.
+        Amint mindhárman leadták a heti válaszukat, a rendszer kisorsol egy nyertest a beírt filmek közül.
+        <strong>A filmet kizárólag erről a listáról lehet kiválasztani:</strong>
+        <a href="http://movie.nhely.hu/" target="_blank" rel="noopener noreferrer">movie.nhely.hu</a>.
+      </p>
       <div class="meta">
-        <span class="pill">Aktiv het kezdete: {{ cycle_key }}</span>
-        <span class="pill">Kovetkezo ujraindulas: {{ next_reset }} (szerda)</span>
+        <span class="pill">Aktív hét kezdete: {{ cycle_key }}</span>
+        <span class="pill">Következő újraindulás: {{ next_reset }} (szerda)</span>
       </div>
 
       {% with messages = get_flashed_messages(with_categories=true) %}
@@ -62,19 +71,26 @@
       {% if not draw %}
         <form method="post" action="{{ url_for('movie_night_draw') }}">
           <div>
-            <label for="name">Nev</label>
+            <label for="name">Név</label>
             <select id="name" name="name" required>
-              <option value="">Valassz nevet</option>
+              <option value="">Válassz nevet</option>
               {% for name in allowed_names %}
                 <option value="{{ name }}">{{ name }}</option>
               {% endfor %}
             </select>
           </div>
           <div>
-            <label for="movie_title">Filmcim</label>
+            <label for="attendance_status">Részvétel</label>
+            <select id="attendance_status" name="attendance_status" required>
+              <option value="{{ status_coming }}">Tudok jönni</option>
+              <option value="{{ status_not_coming }}">Nem tudok jönni</option>
+            </select>
+          </div>
+          <div>
+            <label for="movie_title">Filmcím</label>
             <input id="movie_title" name="movie_title" maxlength="140" required placeholder="Pl. Interstellar">
           </div>
-          <button type="submit">Film bekuldese</button>
+          <button type="submit">Jóváhagyás</button>
         </form>
       {% endif %}
 
@@ -92,13 +108,17 @@
               <div class="person">
                 {% if entry %}
                   <span class="person-name">{{ name }}</span>
-                  <span class="movie-title">{{ entry["movie_title"] }}</span>
+                  {% if entry["attendance_status"] == status_not_coming %}
+                    <span class="movie-empty">Ezen a héten jelezte, hogy nem tud jönni.</span>
+                  {% else %}
+                    <span class="movie-title">{{ entry["movie_title"] }}</span>
+                  {% endif %}
                 {% else %}
                   <span class="person-name">{{ name }}</span>
-                  <span class="movie-empty">Meg nincs bekuldes.</span>
+                  <span class="movie-empty">Még nincs beküldés.</span>
                 {% endif %}
               </div>
-              {% if entry and entry["poster_url"] %}
+              {% if entry and entry["attendance_status"] == status_coming and entry["poster_url"] %}
                 <img class="cover" src="{{ entry['poster_url'] }}" alt="{{ entry['movie_title'] }}">
               {% endif %}
             </div>
@@ -109,15 +129,34 @@
       {% if draw %}
         <div class="draw">
           <h2>Nyertes film</h2>
-          <p><strong>{{ draw["winner_movie"] }}</strong> (bekuldte: {{ draw["winner_name"] }})</p>
+          <p><strong>{{ draw["winner_movie"] }}</strong> (beküldte: {{ draw["winner_name"] }})</p>
         </div>
       {% else %}
         <div class="wait">
-          Varakozas a maradek bekuldesekre: {{ missing_names | join(", ") }}
+          Várakozás a maradék beküldésekre: {{ missing_names | join(", ") }}
         </div>
       {% endif %}
-      <p class="small">A sorsolas szerdankent automatikusan ujraindul.</p>
+      <p class="small">A sorsolás szerdánként automatikusan újraindul.</p>
     </section>
   </main>
+  <script>
+    (function () {
+      const statusField = document.getElementById("attendance_status");
+      const movieField = document.getElementById("movie_title");
+      if (!statusField || !movieField) return;
+
+      function syncMovieInputState() {
+        const canCome = statusField.value !== "{{ status_not_coming }}";
+        movieField.disabled = !canCome;
+        movieField.required = canCome;
+        if (!canCome) {
+          movieField.value = "";
+        }
+      }
+
+      statusField.addEventListener("change", syncMovieInputState);
+      syncMovieInputState();
+    })();
+  </script>
 </body>
 </html>
