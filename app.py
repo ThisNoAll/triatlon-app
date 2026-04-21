@@ -5,6 +5,9 @@ import random
 import unicodedata
 import uuid
 import urllib.request
+import html
+import time
+import difflib
 from types import SimpleNamespace
 from functools import wraps
 from html.parser import HTMLParser
@@ -103,6 +106,13 @@ MOVIE_NIGHT_AVATAR_FILES = {
 }
 MOVIE_NIGHT_STATUS_COMING = "coming"
 MOVIE_NIGHT_STATUS_NOT_COMING = "not_coming"
+MOVIE_DB_BASE_URL = "http://movie.nhely.hu/"
+MOVIE_DB_SEARCH_URL = "http://movie.nhely.hu/?s={query}"
+MOVIE_DB_CACHE_SECONDS = 6 * 60 * 60
+MOVIE_DB_TITLES_CACHE = {
+    "fetched_at": 0.0,
+    "titles": [],
+}
 DEFAULT_HTTP_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (X11; Linux x86_64) "
@@ -1233,6 +1243,128 @@ def fetch_text_url(url, timeout=4):
     with urllib.request.urlopen(request_obj, timeout=timeout) as response:
         raw = response.read()
     return raw.decode("utf-8", errors="ignore")
+
+
+def strip_html_tags(value):
+    return re.sub(r"<[^>]+>", " ", value or "")
+
+
+def extract_movie_db_titles_from_html(source_html):
+    titles = set()
+    for href, inner in re.findall(
+        r"""<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>""",
+        source_html,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        href = (href or "").strip()
+        if not href:
+            continue
+        if "movie.nhely.hu" not in href and not href.startswith("/"):
+            continue
+        label = html.unescape(strip_html_tags(inner)).strip()
+        label = re.sub(r"\s+", " ", label)
+        if len(label) < 2 or len(label) > 120:
+            continue
+        if not re.search(r"[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű0-9]", label):
+            continue
+        titles.add(label)
+    return sorted(titles)
+
+
+def normalize_movie_lookup_title(value):
+    text = unicodedata.normalize("NFKD", (value or "").strip())
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.lower()
+    text = re.sub(r"\([^)]*\)", " ", text)
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"^(a|az)\s+", "", text)
+    return text.strip()
+
+
+def movie_titles_equivalent(input_title, candidate_title):
+    n1 = normalize_movie_lookup_title(input_title)
+    n2 = normalize_movie_lookup_title(candidate_title)
+    if not n1 or not n2:
+        return False
+    if n1 == n2:
+        return True
+    if n1.replace(" ", "") == n2.replace(" ", ""):
+        return True
+
+    t1 = set(n1.split())
+    t2 = set(n2.split())
+    if t1 and t2 and (t1.issubset(t2) or t2.issubset(t1)):
+        return True
+
+    ratio = difflib.SequenceMatcher(None, n1, n2).ratio()
+    return ratio >= 0.92
+
+
+def fetch_movie_db_titles(force_refresh=False):
+    now_ts = time.time()
+    if (
+        not force_refresh
+        and MOVIE_DB_TITLES_CACHE["titles"]
+        and (now_ts - MOVIE_DB_TITLES_CACHE["fetched_at"]) < MOVIE_DB_CACHE_SECONDS
+    ):
+        return MOVIE_DB_TITLES_CACHE["titles"]
+
+    base_html = fetch_text_url(MOVIE_DB_BASE_URL, timeout=8)
+    titles = set(extract_movie_db_titles_from_html(base_html))
+
+    extra_pages = set(
+        re.findall(r"""href=["'](?:https?://movie\.nhely\.hu)?(/page/\d+/?)["']""", base_html, re.IGNORECASE)
+    )
+    for path in sorted(extra_pages)[:5]:
+        try:
+            page_html = fetch_text_url(f"http://movie.nhely.hu{path}", timeout=6)
+            titles.update(extract_movie_db_titles_from_html(page_html))
+        except Exception:
+            continue
+
+    cleaned_titles = sorted(title for title in titles if len(normalize_movie_lookup_title(title)) >= 2)
+    MOVIE_DB_TITLES_CACHE["titles"] = cleaned_titles
+    MOVIE_DB_TITLES_CACHE["fetched_at"] = now_ts
+    return cleaned_titles
+
+
+def validate_movie_title_with_movie_db(movie_title):
+    if app.config.get("TESTING"):
+        return True, movie_title, ""
+
+    try:
+        titles = list(fetch_movie_db_titles())
+    except Exception:
+        return False, "", "A filmadatbázis jelenleg nem elérhető, próbáld újra később."
+
+    try:
+        search_html = fetch_text_url(
+            MOVIE_DB_SEARCH_URL.format(query=quote_plus(movie_title)),
+            timeout=8,
+        )
+        titles.extend(extract_movie_db_titles_from_html(search_html))
+    except Exception:
+        pass
+
+    seen = set()
+    unique_titles = []
+    for title in titles:
+        key = normalize_movie_lookup_title(title)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique_titles.append(title)
+
+    for candidate in unique_titles:
+        if movie_titles_equivalent(movie_title, candidate):
+            return True, candidate, ""
+
+    return (
+        False,
+        "",
+        "A megadott film nem található a movie.nhely.hu adatbázisában. Kérlek onnan válassz címet.",
+    )
 
 
 def extract_og_image_url(html):
@@ -3481,6 +3613,11 @@ def movie_night_draw():
             poster_url = ""
             poster_source = ""
         else:
+            is_valid_title, matched_title, validation_message = validate_movie_title_with_movie_db(movie_title)
+            if not is_valid_title:
+                flash(validation_message, "error")
+                return redirect(url_for("movie_night_draw"))
+            movie_title = matched_title
             poster_url, poster_source = lookup_movie_cover_url(movie_title)
 
         existing = query_one(
