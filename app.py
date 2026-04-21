@@ -1,4 +1,4 @@
-import os
+﻿import os
 import re
 import sqlite3
 import random
@@ -139,14 +139,14 @@ EVENT_RESULT_IMAGE_PORTRAIT_HEIGHT = 800
 DISCIPLINE_IMAGE_MAX_WIDTH = 1024
 DISCIPLINE_IMAGE_MAX_HEIGHT = 768
 TEAM_AVATAR_CATALOG = [
-    {"code": "avatar-01", "name": "Láng", "image_path": "/static/team_avatars/avatar-01.svg"},
-    {"code": "avatar-02", "name": "Villám", "image_path": "/static/team_avatars/avatar-02.svg"},
-    {"code": "avatar-03", "name": "Hullám", "image_path": "/static/team_avatars/avatar-03.svg"},
+    {"code": "avatar-01", "name": "LĂˇng", "image_path": "/static/team_avatars/avatar-01.svg"},
+    {"code": "avatar-02", "name": "VillĂˇm", "image_path": "/static/team_avatars/avatar-02.svg"},
+    {"code": "avatar-03", "name": "HullĂˇm", "image_path": "/static/team_avatars/avatar-03.svg"},
     {"code": "avatar-04", "name": "Hegy", "image_path": "/static/team_avatars/avatar-04.svg"},
     {"code": "avatar-05", "name": "Csillag", "image_path": "/static/team_avatars/avatar-05.svg"},
-    {"code": "avatar-06", "name": "Rakéta", "image_path": "/static/team_avatars/avatar-06.svg"},
+    {"code": "avatar-06", "name": "RakĂ©ta", "image_path": "/static/team_avatars/avatar-06.svg"},
     {"code": "avatar-07", "name": "Korona", "image_path": "/static/team_avatars/avatar-07.svg"},
-    {"code": "avatar-08", "name": "Sárkány", "image_path": "/static/team_avatars/avatar-08.svg"},
+    {"code": "avatar-08", "name": "SĂˇrkĂˇny", "image_path": "/static/team_avatars/avatar-08.svg"},
     {"code": "avatar-09", "name": "Pajzs", "image_path": "/static/team_avatars/avatar-09.svg"},
     {"code": "avatar-10", "name": "Sas", "image_path": "/static/team_avatars/avatar-10.svg"},
     {"code": "avatar-11", "name": "Farkas", "image_path": "/static/team_avatars/avatar-11.svg"},
@@ -189,7 +189,7 @@ def connect_postgres():
         from psycopg.rows import dict_row
     except Exception as exc:
         raise RuntimeError(
-            "A Postgres kapcsolat használatához telepítsd a psycopg csomagot."
+            "A Postgres kapcsolat hasznĂˇlatĂˇhoz telepĂ­tsd a psycopg csomagot."
         ) from exc
 
     return psycopg.connect(
@@ -1013,6 +1013,8 @@ def ensure_movie_night_schema(db):
                     movie_title TEXT NOT NULL,
                     poster_url TEXT,
                     poster_source TEXT,
+                    movie_category TEXT,
+                    movie_description TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(cycle_key, participant_name)
@@ -1048,6 +1050,8 @@ def ensure_movie_night_schema(db):
                     movie_title TEXT NOT NULL,
                     poster_url TEXT,
                     poster_source TEXT,
+                    movie_category TEXT,
+                    movie_description TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(cycle_key, participant_name)
@@ -1086,6 +1090,10 @@ def ensure_movie_night_schema(db):
         execute(
             f"ALTER TABLE movie_night_entries ADD COLUMN attendance_status TEXT NOT NULL DEFAULT '{MOVIE_NIGHT_STATUS_COMING}'"
         )
+    if "movie_category" not in columns:
+        execute("ALTER TABLE movie_night_entries ADD COLUMN movie_category TEXT")
+    if "movie_description" not in columns:
+        execute("ALTER TABLE movie_night_entries ADD COLUMN movie_description TEXT")
     execute(
         """
         UPDATE movie_night_entries
@@ -1188,8 +1196,8 @@ def finalize_movie_night_cycle(cycle_key):
         winner_name = selected["participant_name"]
         winner_movie = selected["movie_title"]
     else:
-        winner_name = "Nincs vetítés"
-        winner_movie = "Ezen a héten nem érkezett érvényes filmválasztás."
+        winner_name = "Nincs vetĂ­tĂ©s"
+        winner_movie = "Ezen a hĂ©ten nem Ă©rkezett Ă©rvĂ©nyes filmvĂˇlasztĂˇs."
 
     execute(
         """
@@ -1215,7 +1223,7 @@ def finalize_movie_night_cycle_if_due(cycle_key, now=None):
 def get_movie_night_entries(cycle_key):
     rows = query_all(
         """
-        SELECT participant_name, attendance_status, movie_title, poster_url, poster_source, created_at, updated_at
+        SELECT participant_name, attendance_status, movie_title, poster_url, poster_source, movie_category, movie_description, created_at, updated_at
         FROM movie_night_entries
         WHERE cycle_key = ?
         """,
@@ -1274,13 +1282,13 @@ def extract_movie_db_titles_from_html(source_html):
         "/page/",
     )
     blocked_exact_labels = {
-        "főoldal",
+        "fĹ‘oldal",
         "oldalak",
-        "következő",
-        "előző",
+        "kĂ¶vetkezĹ‘",
+        "elĹ‘zĹ‘",
         "next",
         "previous",
-        "keresés",
+        "keresĂ©s",
         "search",
     }
     for href, inner in re.findall(
@@ -1300,7 +1308,7 @@ def extract_movie_db_titles_from_html(source_html):
             continue
         if label.lower() in blocked_exact_labels:
             continue
-        if not re.search(r"[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű0-9]", label):
+        if not re.search(r"[A-Za-zĂĂ‰ĂŤĂ“Ă–ĹĂšĂśĹ°ĂˇĂ©Ă­ĂłĂ¶Ĺ‘ĂşĂĽĹ±0-9]", label):
             continue
         titles.add(label)
 
@@ -1309,7 +1317,7 @@ def extract_movie_db_titles_from_html(source_html):
         label = re.sub(r"\s+", " ", label)
         if len(label) < 2 or len(label) > 120:
             continue
-        if not re.search(r"[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű0-9]", label):
+        if not re.search(r"[A-Za-zĂĂ‰ĂŤĂ“Ă–ĹĂšĂśĹ°ĂˇĂ©Ă­ĂłĂ¶Ĺ‘ĂşĂĽĹ±0-9]", label):
             continue
         titles.add(label)
 
@@ -1470,29 +1478,107 @@ def extract_movie_db_candidates_from_api(items):
 
         href = (item.get("link") or "").strip()
         poster_url = ""
+        category = ""
+        description = ""
         embedded = item.get("_embedded") or {}
         media_list = embedded.get("wp:featuredmedia") or []
         if media_list and isinstance(media_list[0], dict):
             poster_url = (media_list[0].get("source_url") or "").strip()
+            media_sizes = (media_list[0].get("media_details") or {}).get("sizes") or {}
+            for preferred in ("medium", "large", "thumbnail"):
+                variant = media_sizes.get(preferred) or {}
+                src = (variant.get("source_url") or "").strip()
+                if src:
+                    poster_url = src
+                    break
+
+        term_groups = embedded.get("wp:term") or []
+        for group in term_groups:
+            if not isinstance(group, list):
+                continue
+            for term in group:
+                if not isinstance(term, dict):
+                    continue
+                taxonomy = (term.get("taxonomy") or "").strip().lower()
+                name = (term.get("name") or "").strip()
+                if taxonomy == "category" and name:
+                    category = name
+                    break
+            if category:
+                break
+
+        excerpt_obj = item.get("excerpt") or {}
+        description = html.unescape(strip_html_tags(excerpt_obj.get("rendered") or "")).strip()
+        description = re.sub(r"\s+", " ", description)
 
         candidates.append(
             {
                 "title": title,
                 "poster_url": poster_url,
                 "href": href,
+                "movie_category": category,
+                "movie_description": description,
             }
         )
     return candidates
 
 
+def find_best_movie_db_candidate(movie_title):
+    query = quote_plus(movie_title)
+    candidates = []
+
+    try:
+        candidates.extend(
+            extract_movie_db_candidates_from_api(
+                fetch_json_url(MOVIE_DB_API_SEARCH_URL.format(query=query), timeout=8)
+            )
+        )
+    except Exception:
+        pass
+
+    try:
+        search_html = fetch_text_url(MOVIE_DB_SEARCH_URL.format(query=query), timeout=8)
+        candidates.extend(extract_movie_db_search_candidates(search_html))
+    except Exception:
+        pass
+
+    best = None
+    best_score = 0.0
+    for candidate in candidates:
+        score = movie_title_match_score(movie_title, candidate.get("title", ""))
+        if score > best_score:
+            best_score = score
+            best = candidate
+
+    if not best or best_score < 0.78:
+        return None
+
+    best["title"] = cleanup_movie_display_title(best.get("title", ""))
+    if not best.get("poster_url") and best.get("href"):
+        try:
+            detail_html = fetch_text_url(best["href"], timeout=8)
+            detail_poster = extract_og_image_url(detail_html)
+            if detail_poster:
+                best["poster_url"] = urljoin(MOVIE_DB_BASE_URL, detail_poster)
+        except Exception:
+            pass
+    if best.get("poster_url"):
+        best["poster_url"] = urljoin(MOVIE_DB_BASE_URL, best["poster_url"])
+    best.setdefault("movie_category", "")
+    best.setdefault("movie_description", "")
+    return best
+
+
 def validate_movie_title_with_movie_db(movie_title):
     if app.config.get("TESTING"):
-        return True, movie_title, ""
+        return True, movie_title, "", {}
 
     try:
         titles = list(fetch_movie_db_titles())
     except Exception:
-        return False, "", "A filmadatbázis jelenleg nem elérhető, próbáld újra később."
+        return False, "", "A filmadatbázis jelenleg nem elérhető, próbáld újra később.", {}
+
+    best_db_candidate = find_best_movie_db_candidate(movie_title)
 
     try:
         api_candidates = extract_movie_db_candidates_from_api(
@@ -1538,35 +1624,45 @@ def validate_movie_title_with_movie_db(movie_title):
     best_score = 0.0
     for candidate in unique_titles:
         if movie_titles_equivalent(movie_title, candidate):
-            return True, cleanup_movie_display_title(candidate), ""
+            clean_candidate = cleanup_movie_display_title(candidate)
+            if best_db_candidate and movie_titles_equivalent(clean_candidate, best_db_candidate.get("title", "")):
+                return True, clean_candidate, "", best_db_candidate
+            return True, clean_candidate, "", {}
         score = movie_title_match_score(movie_title, candidate)
         if score > best_score:
             best_score = score
             best_candidate = candidate
 
-    # Fallback: once force-refresh the title cache before rejecting.
     try:
         refreshed_titles = fetch_movie_db_titles(force_refresh=True)
     except Exception:
         refreshed_titles = []
     for candidate in refreshed_titles:
         if movie_titles_equivalent(movie_title, candidate):
-            return True, cleanup_movie_display_title(candidate), ""
+            clean_candidate = cleanup_movie_display_title(candidate)
+            if best_db_candidate and movie_titles_equivalent(clean_candidate, best_db_candidate.get("title", "")):
+                return True, clean_candidate, "", best_db_candidate
+            return True, clean_candidate, "", {}
         score = movie_title_match_score(movie_title, candidate)
         if score > best_score:
             best_score = score
             best_candidate = candidate
 
     if best_candidate and best_score >= 0.84:
-        return True, cleanup_movie_display_title(best_candidate), ""
+        clean_candidate = cleanup_movie_display_title(best_candidate)
+        if best_db_candidate and movie_titles_equivalent(clean_candidate, best_db_candidate.get("title", "")):
+            return True, clean_candidate, "", best_db_candidate
+        return True, clean_candidate, "", {}
+
+    if best_db_candidate:
+        return True, best_db_candidate["title"], "", best_db_candidate
 
     return (
         False,
         "",
         "A megadott film nem található a movie.nhely.hu adatbázisában. Kérlek onnan válassz címet.",
+        {},
     )
-
-
 def extract_og_image_url(html):
     match = re.search(
         r"""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']""",
@@ -1604,6 +1700,12 @@ def extract_imdb_title_path(html):
 def lookup_movie_cover_url(movie_title):
     if app.config.get("TESTING"):
         return "", ""
+
+    best_candidate = find_best_movie_db_candidate(movie_title)
+    if best_candidate and best_candidate.get("poster_url"):
+        poster = best_candidate["poster_url"]
+        MOVIE_DB_POSTER_HINTS[normalize_movie_lookup_title(movie_title)] = poster
+        return poster, "movie.nhely.hu"
 
     query = quote_plus(movie_title)
     movie_db_url = MOVIE_DB_SEARCH_URL.format(query=query)
@@ -1730,21 +1832,37 @@ def backfill_movie_night_missing_posters(cycle_key, entries):
     for entry in entries:
         if entry["attendance_status"] == MOVIE_NIGHT_STATUS_NOT_COMING:
             continue
-        if entry["poster_url"]:
+        if entry["poster_url"] and (entry["movie_category"] or entry["movie_description"]):
             continue
         title = (entry["movie_title"] or "").strip()
         if not title:
             continue
-        poster_url, poster_source = lookup_movie_cover_url(title)
+        best_candidate = find_best_movie_db_candidate(title)
+        poster_url = (best_candidate.get("poster_url") or "").strip() if best_candidate else ""
+        poster_source = "movie.nhely.hu" if poster_url else ""
+        movie_category = (best_candidate.get("movie_category") or "").strip() if best_candidate else ""
+        movie_description = (best_candidate.get("movie_description") or "").strip() if best_candidate else ""
         if not poster_url:
+            poster_url, poster_source = lookup_movie_cover_url(title)
+
+        if not poster_url and not movie_category and not movie_description:
             continue
+
         execute(
             """
             UPDATE movie_night_entries
-            SET poster_url = ?, poster_source = ?, updated_at = ?
+            SET poster_url = ?, poster_source = ?, movie_category = ?, movie_description = ?, updated_at = ?
             WHERE cycle_key = ? AND participant_name = ?
             """,
-            (poster_url, poster_source, now_str(), cycle_key, entry["participant_name"]),
+            (
+                poster_url,
+                poster_source,
+                movie_category,
+                movie_description,
+                now_str(),
+                cycle_key,
+                entry["participant_name"],
+            ),
         )
         updated = True
     return updated
@@ -1865,7 +1983,7 @@ def admin_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         if not session.get("admin_logged_in"):
-            flash("Előbb jelentkezz be szervezőként.", "error")
+            flash("ElĹ‘bb jelentkezz be szervezĹ‘kĂ©nt.", "error")
             return redirect(url_for("admin_login"))
         return fn(*args, **kwargs)
     return wrapper
@@ -1919,7 +2037,7 @@ def get_team_avatar_selection(event_id, team_number):
 def choose_team_avatar(event_id, team_number, avatar_id, registration_id):
     avatar = query_one("SELECT id FROM team_avatars WHERE id = ? ", (avatar_id,))
     if not avatar:
-        raise ValueError("Á‰rvénytelen avatár.")
+        raise ValueError("Ăâ€°rvĂ©nytelen avatĂˇr.")
 
     execute(
         """
@@ -1992,11 +2110,11 @@ def save_uploaded_discipline_image(uploaded_file):
 
     filename = secure_filename(uploaded_file.filename or "")
     if not filename or "." not in filename:
-        raise ValueError("A feltöltött versenyszám-kép fájlneve érvénytelen.")
+        raise ValueError("A feltĂ¶ltĂ¶tt versenyszĂˇm-kĂ©p fĂˇjlneve Ă©rvĂ©nytelen.")
 
     extension = filename.rsplit(".", 1)[1].lower()
     if extension not in ALLOWED_DISCIPLINE_IMAGE_EXTENSIONS:
-        raise ValueError("A versenyszám-kép csak PNG, JPG, JPEG, GIF vagy WEBP lehet.")
+        raise ValueError("A versenyszĂˇm-kĂ©p csak PNG, JPG, JPEG, GIF vagy WEBP lehet.")
 
     os.makedirs(DISCIPLINE_IMAGE_UPLOAD_DIR, exist_ok=True)
     stored_name = f"{uuid.uuid4().hex}.{extension}"
@@ -2013,7 +2131,7 @@ def save_uploaded_discipline_image(uploaded_file):
 
             image = source.copy()
     except Exception as exc:
-        raise ValueError("A feltöltött versenyszám-kép nem értelmezhető képként.") from exc
+        raise ValueError("A feltĂ¶ltĂ¶tt versenyszĂˇm-kĂ©p nem Ă©rtelmezhetĹ‘ kĂ©pkĂ©nt.") from exc
 
     resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
     image.thumbnail((DISCIPLINE_IMAGE_MAX_WIDTH, DISCIPLINE_IMAGE_MAX_HEIGHT), resampling)
@@ -2045,18 +2163,18 @@ def get_pillow_image_module():
         from PIL import Image
     except Exception as exc:
         raise ValueError(
-            "Képfeltöltéshez telepítsd a Pillow csomagot (pip install Pillow)."
+            "KĂ©pfeltĂ¶ltĂ©shez telepĂ­tsd a Pillow csomagot (pip install Pillow)."
         ) from exc
     return Image
 
 
 def save_uploaded_team_avatar_image(uploaded_file):
     if not uploaded_file or not getattr(uploaded_file, "filename", ""):
-        raise ValueError("Válassz ki egy avatar képet feltöltéshez.")
+        raise ValueError("VĂˇlassz ki egy avatar kĂ©pet feltĂ¶ltĂ©shez.")
 
     filename = secure_filename(uploaded_file.filename or "")
     if not filename or "." not in filename:
-        raise ValueError("Á‰rvénytelen avatar fájlnév.")
+        raise ValueError("Ăâ€°rvĂ©nytelen avatar fĂˇjlnĂ©v.")
 
     extension = filename.rsplit(".", 1)[1].lower()
     if extension not in ALLOWED_TEAM_AVATAR_UPLOAD_EXTENSIONS:
@@ -2069,7 +2187,7 @@ def save_uploaded_team_avatar_image(uploaded_file):
         with Image.open(uploaded_file.stream) as source:
             image = source.convert("RGBA")
     except Exception as exc:
-        raise ValueError("A feltöltött fájl nem értelmezhető képként.") from exc
+        raise ValueError("A feltĂ¶ltĂ¶tt fĂˇjl nem Ă©rtelmezhetĹ‘ kĂ©pkĂ©nt.") from exc
 
     width, height = image.size
     crop_size = min(width, height)
@@ -2092,11 +2210,11 @@ def save_uploaded_event_result_image(uploaded_file):
 
     filename = secure_filename(uploaded_file.filename or "")
     if not filename or "." not in filename:
-        raise ValueError("Á‰rvénytelen eredménykép fájlnév.")
+        raise ValueError("Ăâ€°rvĂ©nytelen eredmĂ©nykĂ©p fĂˇjlnĂ©v.")
 
     extension = filename.rsplit(".", 1)[1].lower()
     if extension not in ALLOWED_EVENT_RESULT_IMAGE_EXTENSIONS:
-        raise ValueError("Az eredménykép csak PNG, JPG, JPEG, GIF vagy WEBP lehet.")
+        raise ValueError("Az eredmĂ©nykĂ©p csak PNG, JPG, JPEG, GIF vagy WEBP lehet.")
 
     Image = get_pillow_image_module()
     try:
@@ -2111,7 +2229,7 @@ def save_uploaded_event_result_image(uploaded_file):
                 source = ImageOps.exif_transpose(source)
             image = source.convert("RGB")
     except Exception as exc:
-        raise ValueError("A feltöltött eredménykép nem értelmezhető képként.") from exc
+        raise ValueError("A feltĂ¶ltĂ¶tt eredmĂ©nykĂ©p nem Ă©rtelmezhetĹ‘ kĂ©pkĂ©nt.") from exc
 
     width, height = image.size
     is_portrait = height > width
@@ -2260,7 +2378,7 @@ def parse_new_disciplines_from_form():
             continue
         if not name or not description:
             raise ValueError(
-                "Ášj versenyszámnál a név és a leírás együtt kötelező."
+                "ĂĹˇj versenyszĂˇmnĂˇl a nĂ©v Ă©s a leĂ­rĂˇs egyĂĽtt kĂ¶telezĹ‘."
             )
         image_path = save_uploaded_discipline_image(image_file) if has_image else ""
         if target not in ("fixed", "extra"):
@@ -2309,7 +2427,7 @@ def parse_discipline_updates_from_form():
         image_file = images[index] if index < len(images) else None
 
         if not name or not description:
-            raise ValueError("A versenyszám szerkesztésénél a név és a leírás kötelező.")
+            raise ValueError("A versenyszĂˇm szerkesztĂ©sĂ©nĂ©l a nĂ©v Ă©s a leĂ­rĂˇs kĂ¶telezĹ‘.")
 
         image_path = ""
         has_new_image = bool(image_file and getattr(image_file, "filename", ""))
@@ -2359,7 +2477,7 @@ def apply_discipline_updates_from_form():
             )
         except Exception as exc:
             if "UNIQUE" in str(exc).upper():
-                raise ValueError("Már létezik versenyszám ezzel a névvel.")
+                raise ValueError("MĂˇr lĂ©tezik versenyszĂˇm ezzel a nĂ©vvel.")
             raise
 
 
@@ -2370,7 +2488,7 @@ def create_or_get_discipline(name, description, image_path="", youtube_url=""):
     normalized_youtube_url = normalize_youtube_embed_url(youtube_url)
 
     if not normalized_name or not normalized_description:
-        raise ValueError("A versenyszám neve és leírása nem lehet üres.")
+        raise ValueError("A versenyszĂˇm neve Ă©s leĂ­rĂˇsa nem lehet ĂĽres.")
 
     existing = query_one(
         """
@@ -2446,7 +2564,7 @@ def resolve_event_discipline_selection():
     extra_ids = [discipline_id for discipline_id in unique_int_list(extra_ids) if discipline_id not in fixed_set]
 
     if not fixed_ids:
-        raise ValueError("Legalább egy fix versenyszámot ki kell választani.")
+        raise ValueError("LegalĂˇbb egy fix versenyszĂˇmot ki kell vĂˇlasztani.")
 
     return fixed_ids, extra_ids
 
@@ -2613,17 +2731,17 @@ def get_event_identifier(event_id):
 
 def payment_label(status):
     mapping = {
-        PAYMENT_PENDING: "Fizetésre vár",
+        PAYMENT_PENDING: "FizetĂ©sre vĂˇr",
         PAYMENT_PAID: "Befizetve",
-        PAYMENT_INVALID: "Á‰rvénytelen",
+        PAYMENT_INVALID: "Ăâ€°rvĂ©nytelen",
     }
     return mapping.get(status, status)
 
 
 def payment_method_label(method):
     mapping = {
-        PAYMENT_METHOD_TRANSFER: "Utalás",
-        PAYMENT_METHOD_CASH: "Készpénz",
+        PAYMENT_METHOD_TRANSFER: "UtalĂˇs",
+        PAYMENT_METHOD_CASH: "KĂ©szpĂ©nz",
         PAYMENT_METHOD_NONE: "Nincs",
     }
     return mapping.get(method, method)
@@ -2631,10 +2749,10 @@ def payment_method_label(method):
 
 def team_pairing_mode_label(mode):
     mapping = {
-        TEAM_PAIRING_MIXED: "Fix és véletlenszerű csapatelosztás",
-        TEAM_PAIRING_MIXED_CONFIRM: "Fix (visszaigazolós) és véletlenszerű csapatelosztás",
-        TEAM_PAIRING_FIXED_ONLY: "Fix csapatelosztás",
-        TEAM_PAIRING_RANDOM_ONLY: "Véletlenszerű csapatelosztás",
+        TEAM_PAIRING_MIXED: "Fix Ă©s vĂ©letlenszerĹ± csapatelosztĂˇs",
+        TEAM_PAIRING_MIXED_CONFIRM: "Fix (visszaigazolĂłs) Ă©s vĂ©letlenszerĹ± csapatelosztĂˇs",
+        TEAM_PAIRING_FIXED_ONLY: "Fix csapatelosztĂˇs",
+        TEAM_PAIRING_RANDOM_ONLY: "VĂ©letlenszerĹ± csapatelosztĂˇs",
     }
     return mapping.get(mode, mapping[TEAM_PAIRING_MIXED])
 
@@ -2848,7 +2966,7 @@ def create_or_replace_team_name_proposal(event_id, team_number, registration_id,
         raise ValueError("Adj meg egy csapatnevet.")
 
     if team_name_exists(event_id, team_number, proposed_name):
-        raise ValueError("Ezen az eseményen már létezik ilyen csapatnév.")
+        raise ValueError("Ezen az esemĂ©nyen mĂˇr lĂ©tezik ilyen csapatnĂ©v.")
 
     old_pending = get_pending_team_name_proposal(event_id, team_number)
     if old_pending:
@@ -2976,7 +3094,7 @@ def get_my_status(event_id):
     }
 
     if reg["payment_status"] == PAYMENT_INVALID:
-        status["status_label"] = "A jelentkezésed érvénytelenné vált"
+        status["status_label"] = "A jelentkezĂ©sed Ă©rvĂ©nytelennĂ© vĂˇlt"
         status["team_number"] = None
         status["team_name"] = None
         status["team_name_state"] = None
@@ -2994,7 +3112,7 @@ def get_my_status(event_id):
         pending_proposal = get_pending_team_name_proposal(event_id, reg["assigned_team"])
         team_avatar = get_team_avatar_selection(event_id, reg["assigned_team"])
 
-        status["status_label"] = "Csapatba kerültél"
+        status["status_label"] = "Csapatba kerĂĽltĂ©l"
         status["team_number"] = reg["assigned_team"]
         status["team_size"] = team_size
         status["team_name"] = team_name_state["name"] if team_name_state else approved_name
@@ -3011,11 +3129,11 @@ def get_my_status(event_id):
         return status
 
     if reg["pending_stage"] == 3:
-        status["status_label"] = "A 3. fős bővítési körben vagy"
+        status["status_label"] = "A 3. fĹ‘s bĹ‘vĂ­tĂ©si kĂ¶rben vagy"
     elif reg["pending_stage"] == 4:
-        status["status_label"] = "A 4. fős bővítési körben vagy"
+        status["status_label"] = "A 4. fĹ‘s bĹ‘vĂ­tĂ©si kĂ¶rben vagy"
     else:
-        status["status_label"] = "Jelentkezésed rögzítve, társra vársz"
+        status["status_label"] = "JelentkezĂ©sed rĂ¶gzĂ­tve, tĂˇrsra vĂˇrsz"
 
     status["team_number"] = None
     status["team_size"] = None
@@ -3052,13 +3170,13 @@ def build_public_teams(event_id):
         visible_names = []
         single_waiting_message = ""
         show_single_member_name = False
-        # a specifikáció szerint:
-        # 1/2 -> név rejtett
-        # 2/2 -> látszik
-        # 2/3 -> 2 látszik, az új nem
-        # 3/3 -> látszik
-        # 3/4 -> 3 látszik, az új nem
-        # 4/4 -> látszik
+        # a specifikĂˇciĂł szerint:
+        # 1/2 -> nĂ©v rejtett
+        # 2/2 -> lĂˇtszik
+        # 2/3 -> 2 lĂˇtszik, az Ăşj nem
+        # 3/3 -> lĂˇtszik
+        # 3/4 -> 3 lĂˇtszik, az Ăşj nem
+        # 4/4 -> lĂˇtszik
         if count >= 2:
             visible_names = [m["participant_name"] for m in members]
         elif count == 1:
@@ -3075,9 +3193,9 @@ def build_public_teams(event_id):
                     if event_closed:
                         single_waiting_message = f"{partner_name} automatikusan visszaigazoltnak tekintve."
                     else:
-                        single_waiting_message = f"{partner_name} visszajelzését várjuk."
+                        single_waiting_message = f"{partner_name} visszajelzĂ©sĂ©t vĂˇrjuk."
                 else:
-                    single_waiting_message = "Fix csapattárs visszajelzését várjuk."
+                    single_waiting_message = "Fix csapattĂˇrs visszajelzĂ©sĂ©t vĂˇrjuk."
 
         teams.append(
             {
@@ -3150,7 +3268,7 @@ def get_team_members_with_approved_virtual_partner(event_id, team_number):
         "id": None,
         "event_id": event_id,
         "participant_name": partner_name,
-        "participant_email": "Szervező által jóváhagyott fix csapattárs",
+        "participant_email": "SzervezĹ‘ Ăˇltal jĂłvĂˇhagyott fix csapattĂˇrs",
         "payment_status": virtual_payment_status,
         "payment_method": virtual_payment_method,
         "payment_note": virtual_payment_note,
@@ -3218,7 +3336,7 @@ def assign_random_stage2(event_id, registration_id):
 
     empty_team = find_empty_stage2_team(event_id)
     if empty_team is None:
-        raise ValueError("Nincs szabad csapathely a véletlenszerű párosításhoz.")
+        raise ValueError("Nincs szabad csapathely a vĂ©letlenszerĹ± pĂˇrosĂ­tĂˇshoz.")
     assign_to_stage2_team(registration_id, empty_team, 1)
 
 
@@ -3235,17 +3353,17 @@ def assign_fixed_stage2(event_id, registration_id, fixed_partner_registration_id
             (fixed_partner_registration_id, event_id, PAYMENT_INVALID),
         )
         if not partner:
-            raise ValueError("A választott fix csapattárs nem található.")
+            raise ValueError("A vĂˇlasztott fix csapattĂˇrs nem talĂˇlhatĂł.")
         if partner["teammate_preference"] != TEAM_PREF_FIXED:
-            raise ValueError("A választott játékos nem fix csapattársra vár.")
+            raise ValueError("A vĂˇlasztott jĂˇtĂ©kos nem fix csapattĂˇrsra vĂˇr.")
         if partner["fixed_partner_registration_id"]:
-            raise ValueError("A választott fix csapattárs már párosítva lett.")
+            raise ValueError("A vĂˇlasztott fix csapattĂˇrs mĂˇr pĂˇrosĂ­tva lett.")
         if partner["assigned_team"] is None or partner["assigned_stage"] != 2:
-            raise ValueError("A választott fix csapattárs jelenleg nem párosítható.")
+            raise ValueError("A vĂˇlasztott fix csapattĂˇrs jelenleg nem pĂˇrosĂ­thatĂł.")
 
         partner_team_members = get_stage2_team_members(event_id, partner["assigned_team"])
         if len(partner_team_members) != 1 or partner_team_members[0]["id"] != partner["id"]:
-            raise ValueError("A választott fix csapattárs csapata már nem üres.")
+            raise ValueError("A vĂˇlasztott fix csapattĂˇrs csapata mĂˇr nem ĂĽres.")
 
         assign_to_stage2_team(registration_id, partner["assigned_team"], 2)
         current_reg = get_registration_by_id(registration_id)
@@ -3266,7 +3384,7 @@ def assign_fixed_stage2(event_id, registration_id, fixed_partner_registration_id
     empty_team = find_empty_stage2_team(event_id)
     if empty_team is None:
         raise ValueError(
-            "Nincs új üres csapat fix várakozáshoz. Válassz a fixen várók közül, vagy állj véletlenszerűre."
+            "Nincs Ăşj ĂĽres csapat fix vĂˇrakozĂˇshoz. VĂˇlassz a fixen vĂˇrĂłk kĂ¶zĂĽl, vagy Ăˇllj vĂ©letlenszerĹ±re."
         )
     assign_to_stage2_team(registration_id, empty_team, 1)
 
@@ -3394,14 +3512,14 @@ def register_participant(
     # stage-2 teammate preference handling
     event_row = get_event(event_id)
     if not event_row:
-        raise ValueError("Az esemény nem található.")
+        raise ValueError("Az esemĂ©ny nem talĂˇlhatĂł.")
 
     if event_has_started_or_closed(event_row):
-        raise ValueError("A jelentkezés lezárult.")
+        raise ValueError("A jelentkezĂ©s lezĂˇrult.")
 
     current_count = get_active_registration_count(event_id)
     if current_count >= MAX_PLAYERS:
-        raise ValueError("A jelentkezés lezárult, a maximum 20 fő betelt.")
+        raise ValueError("A jelentkezĂ©s lezĂˇrult, a maximum 20 fĹ‘ betelt.")
 
     teammate_preference = normalize_registration_teammate_preference(teammate_preference)
     event_pairing_mode = normalize_event_team_pairing_mode(
@@ -3409,25 +3527,25 @@ def register_participant(
     )
     if provider != "manual":
         if event_pairing_mode == TEAM_PAIRING_FIXED_ONLY and teammate_preference != TEAM_PREF_FIXED:
-            raise ValueError("Ehhez az eseményhez csak fix csapattárssal lehet jelentkezni.")
+            raise ValueError("Ehhez az esemĂ©nyhez csak fix csapattĂˇrssal lehet jelentkezni.")
         if event_pairing_mode == TEAM_PAIRING_RANDOM_ONLY and teammate_preference != TEAM_PREF_RANDOM:
-            raise ValueError("Ehhez az eseményhez csak véletlenszerű csapattárssal lehet jelentkezni.")
+            raise ValueError("Ehhez az esemĂ©nyhez csak vĂ©letlenszerĹ± csapattĂˇrssal lehet jelentkezni.")
     else:
         teammate_preference = TEAM_PREF_RANDOM
 
     if teammate_preference == TEAM_PREF_FIXED and current_count >= 10:
-        raise ValueError("Fix csapattárs mód csak az első 10 jelentkezőnél használható.")
+        raise ValueError("Fix csapattĂˇrs mĂłd csak az elsĹ‘ 10 jelentkezĹ‘nĂ©l hasznĂˇlhatĂł.")
 
     if event_row["has_fee"] == 1:
         payment_status = PAYMENT_PENDING
         if payment_method not in (PAYMENT_METHOD_TRANSFER, PAYMENT_METHOD_CASH):
-            raise ValueError("Fizetős eseménynél válassz fizetési módot: utalás vagy készpénz.")
+            raise ValueError("FizetĹ‘s esemĂ©nynĂ©l vĂˇlassz fizetĂ©si mĂłdot: utalĂˇs vagy kĂ©szpĂ©nz.")
     else:
         payment_status = PAYMENT_PAID
         payment_method = PAYMENT_METHOD_NONE
     avatar_idea_id = parse_avatar_id(team_avatar_idea_id)
     if avatar_idea_id and not avatar_exists(avatar_idea_id):
-        raise ValueError("Érvénytelen avatar választás.")
+        raise ValueError("Ă‰rvĂ©nytelen avatar vĂˇlasztĂˇs.")
 
     fixed_partner_name = (fixed_partner_name or "").strip()
     fixed_partner_approved_by_admin = 0
@@ -3877,36 +3995,45 @@ def movie_night_draw():
         movie_title = " ".join((request.form.get("movie_title") or "").split())
 
         if name not in MOVIE_NIGHT_ALLOWED_NAMES:
-            flash("Csak Peti, Jakab vagy Martin választható.", "error")
+            flash("Csak Peti, Jakab vagy Martin vĂˇlaszthatĂł.", "error")
             return redirect(url_for("movie_night_draw"))
 
         if attendance_status not in (MOVIE_NIGHT_STATUS_COMING, MOVIE_NIGHT_STATUS_NOT_COMING):
-            flash("Érvénytelen részvételi állapot.", "error")
+            flash("Ă‰rvĂ©nytelen rĂ©szvĂ©teli Ăˇllapot.", "error")
             return redirect(url_for("movie_night_draw"))
 
         if attendance_status == MOVIE_NIGHT_STATUS_COMING and not movie_title:
-            flash("Ha tudsz jönni, adj meg egy filmcímet is.", "error")
+            flash("Ha tudsz jĂ¶nni, adj meg egy filmcĂ­met is.", "error")
             return redirect(url_for("movie_night_draw"))
 
         if attendance_status == MOVIE_NIGHT_STATUS_COMING and len(movie_title) > 140:
-            flash("A filmcím legfeljebb 140 karakter lehet.", "error")
+            flash("A filmcĂ­m legfeljebb 140 karakter lehet.", "error")
             return redirect(url_for("movie_night_draw"))
 
         if draw:
-            flash("Erre a hétre már kisorsoltuk a filmet. Új kör szerdán indul.", "info")
+            flash("Erre a hĂ©tre mĂˇr kisorsoltuk a filmet. Ăšj kĂ¶r szerdĂˇn indul.", "info")
             return redirect(url_for("movie_night_draw"))
 
+        movie_category = ""
+        movie_description = ""
         if attendance_status == MOVIE_NIGHT_STATUS_NOT_COMING:
             movie_title = ""
             poster_url = ""
             poster_source = ""
         else:
-            is_valid_title, matched_title, validation_message = validate_movie_title_with_movie_db(movie_title)
+            is_valid_title, matched_title, validation_message, matched_details = validate_movie_title_with_movie_db(
+                movie_title
+            )
             if not is_valid_title:
                 flash(validation_message, "error")
                 return redirect(url_for("movie_night_draw"))
             movie_title = matched_title
-            poster_url, poster_source = lookup_movie_cover_url(movie_title)
+            movie_category = (matched_details.get("movie_category") or "").strip() if matched_details else ""
+            movie_description = (matched_details.get("movie_description") or "").strip() if matched_details else ""
+            poster_url = (matched_details.get("poster_url") or "").strip() if matched_details else ""
+            poster_source = "movie.nhely.hu" if poster_url else ""
+            if not poster_url:
+                poster_url, poster_source = lookup_movie_cover_url(movie_title)
 
         existing = query_one(
             """
@@ -3921,19 +4048,28 @@ def movie_night_draw():
             execute(
                 """
                 UPDATE movie_night_entries
-                SET attendance_status = ?, movie_title = ?, poster_url = ?, poster_source = ?, updated_at = ?
+                SET attendance_status = ?, movie_title = ?, poster_url = ?, poster_source = ?, movie_category = ?, movie_description = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (attendance_status, movie_title, poster_url, poster_source, now_str(), existing["id"]),
+                (
+                    attendance_status,
+                    movie_title,
+                    poster_url,
+                    poster_source,
+                    movie_category,
+                    movie_description,
+                    now_str(),
+                    existing["id"],
+                ),
             )
-            flash(f"{name} válasza frissítve lett.", "success")
+            flash(f"{name} vĂˇlasza frissĂ­tve lett.", "success")
         else:
             execute(
                 """
                 INSERT INTO movie_night_entries (
-                    cycle_key, participant_name, attendance_status, movie_title, poster_url, poster_source, created_at, updated_at
+                    cycle_key, participant_name, attendance_status, movie_title, poster_url, poster_source, movie_category, movie_description, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     cycle_key,
@@ -3942,11 +4078,13 @@ def movie_night_draw():
                     movie_title,
                     poster_url,
                     poster_source,
+                    movie_category,
+                    movie_description,
                     now_str(),
                     now_str(),
                 ),
             )
-            flash(f"{name} sikeresen rögzítette a válaszát.", "success")
+            flash(f"{name} sikeresen rĂ¶gzĂ­tette a vĂˇlaszĂˇt.", "success")
 
         entries = get_movie_night_entries(cycle_key)
         if len(entries) == len(MOVIE_NIGHT_ALLOWED_NAMES):
@@ -3960,8 +4098,8 @@ def movie_night_draw():
                 winner_name = selected["participant_name"]
                 winner_movie = selected["movie_title"]
             else:
-                winner_name = "Nincs vetítés"
-                winner_movie = "Ezen a héten mindhárom fő jelezte, hogy nem tud jönni."
+                winner_name = "Nincs vetĂ­tĂ©s"
+                winner_movie = "Ezen a hĂ©ten mindhĂˇrom fĹ‘ jelezte, hogy nem tud jĂ¶nni."
             execute(
                 """
                 INSERT INTO movie_night_draws (cycle_key, winner_name, winner_movie, created_at)
@@ -3972,7 +4110,7 @@ def movie_night_draw():
             if eligible_entries:
                 flash(f"A heti nyertes film: {winner_movie} ({winner_name}).", "success")
             else:
-                flash("Ezen a héten elmarad a vetítés.", "info")
+                flash("Ezen a hĂ©ten elmarad a vetĂ­tĂ©s.", "info")
 
         return redirect(url_for("movie_night_draw"))
 
@@ -4124,7 +4262,7 @@ def event_home(slug):
 def register_email(slug):
     event_row = get_event_by_slug(slug)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("home"))
 
     name = request.form.get("name", "").strip()
@@ -4139,21 +4277,21 @@ def register_email(slug):
     fixed_partner_name = request.form.get("fixed_partner_name", "").strip()
 
     if not name or not email:
-        flash("A név és az email megadása kötelező.", "error")
+        flash("A nĂ©v Ă©s az email megadĂˇsa kĂ¶telezĹ‘.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     if "@" not in email:
-        flash("Á‰rvénytelen email cím.", "error")
+        flash("Ăâ€°rvĂ©nytelen email cĂ­m.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     if teammate_preference == TEAM_PREF_FIXED and not fixed_partner_registration_id and not fixed_partner_name:
-        flash("Fix csapattárs módban adj meg egy nevet, vagy válassz a várakozók közül.", "error")
+        flash("Fix csapattĂˇrs mĂłdban adj meg egy nevet, vagy vĂˇlassz a vĂˇrakozĂłk kĂ¶zĂĽl.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     existing = get_registration_by_email(event_row["id"], email)
     if existing:
         set_session_registration_id(event_row["id"], existing["id"])
-        flash("Ezzel az email címmel már jelentkeztél erre az eseményre.", "info")
+        flash("Ezzel az email cĂ­mmel mĂˇr jelentkeztĂ©l erre az esemĂ©nyre.", "info")
         return redirect(url_for("event_home", slug=slug))
 
     try:
@@ -4170,7 +4308,7 @@ def register_email(slug):
             fixed_partner_name=fixed_partner_name,
         )
         set_session_registration_id(event_row["id"], registration_id)
-        flash("Sikeres jelentkezés.", "success")
+        flash("Sikeres jelentkezĂ©s.", "success")
     except ValueError as e:
         flash(str(e), "error")
 
@@ -4181,32 +4319,32 @@ def register_email(slug):
 def switch_to_random_teammate(slug):
     event_row = get_event_by_slug(slug)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("home"))
 
     finalize_event_if_needed(event_row)
     event_row = get_event(event_row["id"])
     if event_has_started_or_closed(event_row):
-        flash("A csapatbeállítás már nem módosítható.", "error")
+        flash("A csapatbeĂˇllĂ­tĂˇs mĂˇr nem mĂłdosĂ­thatĂł.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     registration_id = get_session_registration_id(event_row["id"])
     if not registration_id:
-        flash("Ehhez előbb jelentkezned kell.", "error")
+        flash("Ehhez elĹ‘bb jelentkezned kell.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     reg = get_registration_by_id(registration_id)
     if not reg or reg["event_id"] != event_row["id"] or reg["is_deleted"] == 1:
-        flash("A jelentkezésed nem található.", "error")
+        flash("A jelentkezĂ©sed nem talĂˇlhatĂł.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     if reg["assigned_team"] is None or reg["assigned_stage"] != 2:
-        flash("Ez a beállítás most nem módosítható.", "error")
+        flash("Ez a beĂˇllĂ­tĂˇs most nem mĂłdosĂ­thatĂł.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     team_members = get_stage2_team_members(event_row["id"], reg["assigned_team"])
     if len(team_members) != 1:
-        flash("A csapat már teljes, ezért ez a beállítás nem módosítható.", "info")
+        flash("A csapat mĂˇr teljes, ezĂ©rt ez a beĂˇllĂ­tĂˇs nem mĂłdosĂ­thatĂł.", "info")
         return redirect(url_for("event_home", slug=slug))
 
     execute(
@@ -4219,7 +4357,7 @@ def switch_to_random_teammate(slug):
         (TEAM_PREF_RANDOM, registration_id),
     )
     try_pair_switched_random_registration(event_row["id"], registration_id)
-    flash("Átállítottunk véletlenszerű csapattárs módra.", "success")
+    flash("ĂtĂˇllĂ­tottunk vĂ©letlenszerĹ± csapattĂˇrs mĂłdra.", "success")
     return redirect(url_for("event_home", slug=slug))
 
 
@@ -4229,18 +4367,18 @@ def switch_to_random_teammate(slug):
 @app.route("/e/<slug>/auth/google")
 def google_login(slug):
     if oauth is None:
-        flash("A Google belépés még nincs bekapcsolva.", "error")
+        flash("A Google belĂ©pĂ©s mĂ©g nincs bekapcsolva.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     event_row = get_event_by_slug(slug)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("home"))
 
     if event_row["has_fee"] == 1:
         payment_method = request.args.get("payment_method", "").strip()
         if payment_method not in (PAYMENT_METHOD_TRANSFER, PAYMENT_METHOD_CASH):
-            flash("Google jelentkezéshez is válassz fizetési módot.", "error")
+            flash("Google jelentkezĂ©shez is vĂˇlassz fizetĂ©si mĂłdot.", "error")
             return redirect(url_for("event_home", slug=slug))
         session[f"payment_method_{event_row['id']}"] = payment_method
 
@@ -4250,7 +4388,7 @@ def google_login(slug):
     fixed_partner_name = request.args.get("fixed_partner_name", "").strip()
     fixed_partner_registration_id = (request.args.get("fixed_partner_registration_id", "") or "").strip()
     if teammate_preference == TEAM_PREF_FIXED and not fixed_partner_name and not fixed_partner_registration_id:
-        flash("Fix csapattárs módban adj meg egy nevet, vagy válassz a várakozók közül.", "error")
+        flash("Fix csapattĂˇrs mĂłdban adj meg egy nevet, vagy vĂˇlassz a vĂˇrakozĂłk kĂ¶zĂĽl.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     session[f"team_name_idea_{event_row['id']}"] = request.args.get("team_name_idea", "").strip()
@@ -4266,12 +4404,12 @@ def google_login(slug):
 @app.route("/e/<slug>/auth/google/callback")
 def google_callback(slug):
     if oauth is None:
-        flash("A Google belépés még nincs bekapcsolva.", "error")
+        flash("A Google belĂ©pĂ©s mĂ©g nincs bekapcsolva.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     event_row = get_event_by_slug(slug)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("home"))
 
     token = oauth.google.authorize_access_token()
@@ -4284,19 +4422,19 @@ def google_callback(slug):
     name = user_info.get("name") or email
 
     if not google_sub or not email:
-        flash("A Google-fiókból nem sikerült a szükséges adatokat kiolvasni.", "error")
+        flash("A Google-fiĂłkbĂłl nem sikerĂĽlt a szĂĽksĂ©ges adatokat kiolvasni.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     existing = get_registration_by_google_sub(event_row["id"], google_sub)
     if existing:
         set_session_registration_id(event_row["id"], existing["id"])
-        flash("Már jelentkeztél ezzel a Google-fiókkal.", "info")
+        flash("MĂˇr jelentkeztĂ©l ezzel a Google-fiĂłkkal.", "info")
         return redirect(url_for("event_home", slug=slug))
 
     existing_email = get_registration_by_email(event_row["id"], email)
     if existing_email:
         set_session_registration_id(event_row["id"], existing_email["id"])
-        flash("Ezzel az email címmel már jelentkeztél erre az eseményre.", "info")
+        flash("Ezzel az email cĂ­mmel mĂˇr jelentkeztĂ©l erre az esemĂ©nyre.", "info")
         return redirect(url_for("event_home", slug=slug))
 
     payment_method = session.pop(f"payment_method_{event_row['id']}", None)
@@ -4328,7 +4466,7 @@ def google_callback(slug):
             fixed_partner_name=fixed_partner_name,
         )
         set_session_registration_id(event_row["id"], registration_id)
-        flash("Sikeres Google-jelentkezés.", "success")
+        flash("Sikeres Google-jelentkezĂ©s.", "success")
     except ValueError as e:
         flash(str(e), "error")
 
@@ -4342,24 +4480,24 @@ def google_callback(slug):
 def propose_team_name(slug):
     event_row = get_event_by_slug(slug)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("home"))
 
     finalize_event_if_needed(event_row)
     event_row = get_event(event_row["id"])
 
     if event_has_started_or_closed(event_row):
-        flash("A csapatnév már nem módosítható.", "error")
+        flash("A csapatnĂ©v mĂˇr nem mĂłdosĂ­thatĂł.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     registration_id = get_session_registration_id(event_row["id"])
     if not registration_id:
-        flash("Ehhez előbb jelentkezned kell.", "error")
+        flash("Ehhez elĹ‘bb jelentkezned kell.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     reg = get_registration_by_id(registration_id)
     if not reg or reg["assigned_team"] is None:
-        flash("Csapatnév csak kész csapathoz adható meg.", "error")
+        flash("CsapatnĂ©v csak kĂ©sz csapathoz adhatĂł meg.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     team_number = reg["assigned_team"]
@@ -4369,7 +4507,7 @@ def propose_team_name(slug):
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for("event_home", slug=slug))
-    flash("A csapatnév-javaslat rögzítve lett.", "success")
+    flash("A csapatnĂ©v-javaslat rĂ¶gzĂ­tve lett.", "success")
     return redirect(url_for("event_home", slug=slug))
 
 
@@ -4377,28 +4515,28 @@ def propose_team_name(slug):
 def choose_avatar(slug):
     event_row = get_event_by_slug(slug)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("home"))
 
     finalize_event_if_needed(event_row)
     event_row = get_event(event_row["id"])
     if event_has_started_or_closed(event_row):
-        flash("Az avatár már nem módosítható.", "error")
+        flash("Az avatĂˇr mĂˇr nem mĂłdosĂ­thatĂł.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     registration_id = get_session_registration_id(event_row["id"])
     if not registration_id:
-        flash("Ehhez előbb jelentkezned kell.", "error")
+        flash("Ehhez elĹ‘bb jelentkezned kell.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     reg = get_registration_by_id(registration_id)
     if not reg or reg["event_id"] != event_row["id"] or reg["assigned_team"] is None:
-        flash("Avatárt csak csapatban lévő játékos választhat.", "error")
+        flash("AvatĂˇrt csak csapatban lĂ©vĹ‘ jĂˇtĂ©kos vĂˇlaszthat.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     avatar_id = request.form.get("avatar_id", type=int)
     if not avatar_id:
-        flash("Válassz egy avatárt.", "error")
+        flash("VĂˇlassz egy avatĂˇrt.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     try:
@@ -4407,7 +4545,7 @@ def choose_avatar(slug):
         flash(str(exc), "error")
         return redirect(url_for("event_home", slug=slug))
 
-    flash("A csapat avatárját mentettük.", "success")
+    flash("A csapat avatĂˇrjĂˇt mentettĂĽk.", "success")
     return redirect(url_for("event_home", slug=slug))
 
 
@@ -4415,28 +4553,28 @@ def choose_avatar(slug):
 def vote_extra_discipline(slug):
     event_row = get_event_by_slug(slug)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("home"))
 
     finalize_event_if_needed(event_row)
     event_row = get_event(event_row["id"])
     if event_has_started_or_closed(event_row):
-        flash("A szavazás lezárult.", "error")
+        flash("A szavazĂˇs lezĂˇrult.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     registration_id = get_session_registration_id(event_row["id"])
     if not registration_id:
-        flash("A szavazáshoz előbb jelentkezz erre az eseményre.", "error")
+        flash("A szavazĂˇshoz elĹ‘bb jelentkezz erre az esemĂ©nyre.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     reg = get_registration_by_id(registration_id)
     if not reg or reg["event_id"] != event_row["id"] or reg["is_deleted"] == 1:
-        flash("A szavazáshoz érvényes jelentkezés szükséges.", "error")
+        flash("A szavazĂˇshoz Ă©rvĂ©nyes jelentkezĂ©s szĂĽksĂ©ges.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     discipline_id = request.form.get("discipline_id", type=int)
     if not discipline_id:
-        flash("Válassz egy extra versenyszámot.", "error")
+        flash("VĂˇlassz egy extra versenyszĂˇmot.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     option = query_one(
@@ -4449,7 +4587,7 @@ def vote_extra_discipline(slug):
         (event_row["id"], discipline_id),
     )
     if not option:
-        flash("Á‰rvénytelen extra versenyszám.", "error")
+        flash("Ăâ€°rvĂ©nytelen extra versenyszĂˇm.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     execute(
@@ -4461,7 +4599,7 @@ def vote_extra_discipline(slug):
         """,
         (event_row["id"], registration_id, discipline_id, now_str()),
     )
-    flash("Az extra versenyszám szavazatodat rögzítettük.", "success")
+    flash("Az extra versenyszĂˇm szavazatodat rĂ¶gzĂ­tettĂĽk.", "success")
     return redirect(url_for("event_home", slug=slug))
 
 
@@ -4469,28 +4607,28 @@ def vote_extra_discipline(slug):
 def vote_team_name(slug):
     event_row = get_event_by_slug(slug)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("home"))
 
     registration_id = get_session_registration_id(event_row["id"])
     if not registration_id:
-        flash("Ehhez előbb jelentkezned kell.", "error")
+        flash("Ehhez elĹ‘bb jelentkezned kell.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     proposal_id = request.form.get("proposal_id", type=int)
     vote = request.form.get("vote", "").strip().lower()
     if vote not in ("approve", "reject"):
-        flash("Á‰rvénytelen szavazat.", "error")
+        flash("Ăâ€°rvĂ©nytelen szavazat.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     proposal = query_one("SELECT * FROM team_name_proposals WHERE id = ? ", (proposal_id,))
     if not proposal or proposal["status"] != "pending":
-        flash("A javaslat már nem aktív.", "error")
+        flash("A javaslat mĂˇr nem aktĂ­v.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     reg = get_registration_by_id(registration_id)
     if not reg or reg["event_id"] != proposal["event_id"] or reg["assigned_team"] != proposal["team_number"]:
-        flash("Csak a saját csapatod névjavaslatáról szavazhatsz.", "error")
+        flash("Csak a sajĂˇt csapatod nĂ©vjavaslatĂˇrĂłl szavazhatsz.", "error")
         return redirect(url_for("event_home", slug=slug))
 
     execute(
@@ -4504,7 +4642,7 @@ def vote_team_name(slug):
     )
 
     evaluate_team_name_proposal(proposal_id)
-    flash("A szavazatodat rögzítettük.", "success")
+    flash("A szavazatodat rĂ¶gzĂ­tettĂĽk.", "success")
     return redirect(url_for("event_home", slug=slug))
 
 
@@ -4517,9 +4655,9 @@ def admin_login():
         password = request.form.get("password", "")
         if password == app.config["ADMIN_PASSWORD"]:
             session["admin_logged_in"] = True
-            flash("Sikeres szervezői belépés.", "success")
+            flash("Sikeres szervezĹ‘i belĂ©pĂ©s.", "success")
             return redirect(url_for("admin_dashboard"))
-        flash("Hibás jelszó.", "error")
+        flash("HibĂˇs jelszĂł.", "error")
 
     return render_template("admin_login.html")
 
@@ -4527,7 +4665,7 @@ def admin_login():
 @app.route("/admin/logout")
 def admin_logout():
     session.pop("admin_logged_in", None)
-    flash("Kiléptél a szervezői felületről.", "info")
+    flash("KilĂ©ptĂ©l a szervezĹ‘i felĂĽletrĹ‘l.", "info")
     return redirect(url_for("home"))
 
 
@@ -4587,7 +4725,7 @@ def admin_upload_avatar():
         """,
         (code, avatar_name, image_path, now_str()),
     )
-    flash("Az új avatár feltöltve.", "success")
+    flash("Az Ăşj avatĂˇr feltĂ¶ltve.", "success")
     return redirect(url_for("admin_avatars"))
 
 
@@ -4596,7 +4734,7 @@ def admin_upload_avatar():
 def admin_delete_avatar(avatar_id):
     avatar = query_one("SELECT id, image_path FROM team_avatars WHERE id = ? ", (avatar_id,))
     if not avatar:
-        flash("Az avatár nem található.", "error")
+        flash("Az avatĂˇr nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_avatars"))
 
     execute(
@@ -4627,7 +4765,7 @@ def admin_delete_avatar(avatar_id):
                     pass
         break
 
-    flash("Az avatár törölve.", "success")
+    flash("Az avatĂˇr tĂ¶rĂ¶lve.", "success")
     return redirect(url_for("admin_avatars"))
 
 
@@ -4636,7 +4774,7 @@ def admin_delete_avatar(avatar_id):
 def admin_event_dashboard(event_id):
     event_row = get_event(event_id)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     finalize_event_if_needed(event_row)
@@ -4657,18 +4795,18 @@ def admin_event_dashboard(event_id):
 def admin_event_results(event_id):
     event_row = get_event(event_id)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     finalize_event_if_needed(event_row)
     event_row = get_event(event_id)
 
     if event_row["is_closed"] == 0:
-        flash("Eredményhirdetést csak lezárt eseménynél lehet rögzíteni.", "error")
+        flash("EredmĂ©nyhirdetĂ©st csak lezĂˇrt esemĂ©nynĂ©l lehet rĂ¶gzĂ­teni.", "error")
         return redirect(url_for("admin_dashboard"))
 
     if datetime.now() < parse_dt(event_row["event_at"]):
-        flash("Eredményhirdetés csak az esemény kezdési időpontja után érhető el.", "error")
+        flash("EredmĂ©nyhirdetĂ©s csak az esemĂ©ny kezdĂ©si idĹ‘pontja utĂˇn Ă©rhetĹ‘ el.", "error")
         return redirect(url_for("admin_dashboard"))
 
     if request.method == "GET":
@@ -4682,17 +4820,17 @@ def admin_event_results(event_id):
 
     disciplines = get_event_fixed_disciplines(event_id)
     if not disciplines:
-        flash("Nincs fix versenyszám, ezért nem lehet eredményt rögzíteni.", "error")
+        flash("Nincs fix versenyszĂˇm, ezĂ©rt nem lehet eredmĂ©nyt rĂ¶gzĂ­teni.", "error")
         return redirect(url_for("admin_event_results", event_id=event_id))
 
     team_numbers_raw = request.form.getlist("result_team_number")
     existing_images_raw = request.form.getlist("result_existing_image_path")
 
     if not team_numbers_raw:
-        flash("Nincs csapat, amelyhez eredményt lehetne rögzíteni.", "error")
+        flash("Nincs csapat, amelyhez eredmĂ©nyt lehetne rĂ¶gzĂ­teni.", "error")
         return redirect(url_for("admin_event_results", event_id=event_id))
     if len(team_numbers_raw) != len(existing_images_raw):
-        flash("Hibás eredmény űrlap adatok érkeztek.", "error")
+        flash("HibĂˇs eredmĂ©ny Ĺ±rlap adatok Ă©rkeztek.", "error")
         return redirect(url_for("admin_event_results", event_id=event_id))
 
     rows_for_ranking = []
@@ -4704,11 +4842,11 @@ def admin_event_results(event_id):
         try:
             team_number_int = int(team_number)
         except (TypeError, ValueError):
-            flash("Á‰rvénytelen csapat az eredménylistában.", "error")
+            flash("Ăâ€°rvĂ©nytelen csapat az eredmĂ©nylistĂˇban.", "error")
             return redirect(url_for("admin_event_results", event_id=event_id))
 
         if len(get_team_members(event_id, team_number_int)) == 0:
-            flash(f"A(z) {team_number_int}. csapatnak nincs aktív tagja.", "error")
+            flash(f"A(z) {team_number_int}. csapatnak nincs aktĂ­v tagja.", "error")
             return redirect(url_for("admin_event_results", event_id=event_id))
 
         image_path = existing_image_path
@@ -4732,15 +4870,15 @@ def admin_event_results(event_id):
         for discipline in disciplines:
             raw_points = (request.form.get(f"points_{team_number_int}_{discipline['id']}") or "").strip()
             if raw_points == "":
-                flash(f"A(z) {get_team_display_name(event_id, team_number_int)} csapatnál minden versenyszám pontja kötelező.", "error")
+                flash(f"A(z) {get_team_display_name(event_id, team_number_int)} csapatnĂˇl minden versenyszĂˇm pontja kĂ¶telezĹ‘.", "error")
                 return redirect(url_for("admin_event_results", event_id=event_id))
             try:
                 points = int(raw_points)
             except ValueError:
-                flash(f"A(z) {discipline['name']} pontszáma csak egész szám lehet.", "error")
+                flash(f"A(z) {discipline['name']} pontszĂˇma csak egĂ©sz szĂˇm lehet.", "error")
                 return redirect(url_for("admin_event_results", event_id=event_id))
             if points < 0:
-                flash("A pontszám nem lehet negatív.", "error")
+                flash("A pontszĂˇm nem lehet negatĂ­v.", "error")
                 return redirect(url_for("admin_event_results", event_id=event_id))
             total_points += points
             discipline_points.append(
@@ -4815,7 +4953,7 @@ def admin_event_results(event_id):
         (now_str(), event_id),
     )
 
-    flash("Az eredményhirdetés mentve. A dobogósok kiemelve látszanak a publikus oldalon.", "success")
+    flash("Az eredmĂ©nyhirdetĂ©s mentve. A dobogĂłsok kiemelve lĂˇtszanak a publikus oldalon.", "success")
     return redirect(url_for("admin_event_results", event_id=event_id))
 
 @app.route("/admin/events/new", methods=["GET", "POST"])
@@ -4833,13 +4971,13 @@ def admin_new_event():
         team_pairing_mode = normalize_event_team_pairing_mode(request.form.get("team_pairing_mode"))
 
         if not event_date or not event_time:
-            flash("Az esemény dátuma és időpontja kötelező.", "error")
+            flash("Az esemĂ©ny dĂˇtuma Ă©s idĹ‘pontja kĂ¶telezĹ‘.", "error")
             return redirect(url_for("admin_new_event"))
 
         try:
             event_at = parse_dt_input(event_date, event_time)
         except ValueError:
-            flash("Á‰rvénytelen dátum vagy idő.", "error")
+            flash("Ăâ€°rvĂ©nytelen dĂˇtum vagy idĹ‘.", "error")
             return redirect(url_for("admin_new_event"))
 
         try:
@@ -4880,7 +5018,7 @@ def admin_new_event():
             ),
         )
         save_event_discipline_links(cur.lastrowid, fixed_ids, extra_ids)
-        flash("Az esemény létrejött.", "success")
+        flash("Az esemĂ©ny lĂ©trejĂ¶tt.", "success")
         return redirect(url_for("admin_event_dashboard", event_id=cur.lastrowid))
     return render_template("admin_event_form.html", **build_admin_event_form_context())
 
@@ -4890,7 +5028,7 @@ def admin_new_event():
 def admin_edit_event(event_id):
     event_row = get_event(event_id)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     if request.method == "POST":
@@ -4907,7 +5045,7 @@ def admin_edit_event(event_id):
         try:
             event_at = parse_dt_input(event_date, event_time)
         except ValueError:
-            flash("Á‰rvénytelen dátum vagy idő.", "error")
+            flash("Ăâ€°rvĂ©nytelen dĂˇtum vagy idĹ‘.", "error")
             return redirect(url_for("admin_edit_event", event_id=event_id))
 
         try:
@@ -4946,7 +5084,7 @@ def admin_edit_event(event_id):
             ),
         )
         save_event_discipline_links(event_id, fixed_ids, extra_ids)
-        flash("Az esemény frissítve.", "success")
+        flash("Az esemĂ©ny frissĂ­tve.", "success")
         return redirect(url_for("admin_event_dashboard", event_id=event_id))
     return render_template("admin_event_form.html", **build_admin_event_form_context(event_row))
 
@@ -4956,12 +5094,12 @@ def admin_edit_event(event_id):
 def admin_delete_event(event_id):
     event_row = get_event(event_id)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     if request.method == "POST":
         delete_event_and_related_data(event_id)
-        flash("Az esemény és a hozzá tartozó adatok törölve lettek.", "success")
+        flash("Az esemĂ©ny Ă©s a hozzĂˇ tartozĂł adatok tĂ¶rĂ¶lve lettek.", "success")
         return redirect(url_for("admin_dashboard"))
 
     return render_template(
@@ -4977,7 +5115,7 @@ def admin_delete_event(event_id):
 def admin_finalize_event(event_id):
     event_row = get_event(event_id)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     finalize_pending_stage_partial(event_id, 3)
@@ -5003,7 +5141,7 @@ def admin_finalize_event(event_id):
         WHERE id = ? """,
         (now_str(), event_id),
     )
-    flash("Az esemény jelentkezése lezárva és véglegesítve.", "success")
+    flash("Az esemĂ©ny jelentkezĂ©se lezĂˇrva Ă©s vĂ©glegesĂ­tve.", "success")
     return redirect(url_for("admin_event_dashboard", event_id=event_id))
 
 
@@ -5012,7 +5150,7 @@ def admin_finalize_event(event_id):
 def admin_teams(event_id):
     event_row = get_event(event_id)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     teams = []
@@ -5047,21 +5185,21 @@ def admin_teams(event_id):
 def admin_set_team_avatar(event_id, team_number):
     event_row = get_event(event_id)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     if team_number < 1 or team_number > MAX_TEAMS:
-        flash("Érvénytelen csapat.", "error")
+        flash("Ă‰rvĂ©nytelen csapat.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     avatar_id = parse_avatar_id(request.form.get("avatar_id"))
     if not avatar_id or not avatar_exists(avatar_id):
-        flash("Válassz érvényes avatárt.", "error")
+        flash("VĂˇlassz Ă©rvĂ©nyes avatĂˇrt.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     real_members = get_team_members(event_id, team_number)
     if not real_members:
-        flash("Üres csapathoz még nem állítható avatár.", "error")
+        flash("Ăśres csapathoz mĂ©g nem ĂˇllĂ­thatĂł avatĂˇr.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     selector_registration_id = real_members[0]["id"]
@@ -5071,7 +5209,7 @@ def admin_set_team_avatar(event_id, team_number):
         flash(str(exc), "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
-    flash(f"A {team_number}. csapat avatárja frissítve.", "success")
+    flash(f"A {team_number}. csapat avatĂˇrja frissĂ­tve.", "success")
     return redirect(url_for("admin_teams", event_id=event_id))
 
 
@@ -5080,13 +5218,13 @@ def admin_set_team_avatar(event_id, team_number):
 def admin_add_player(event_id):
     event_row = get_event(event_id)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     finalize_event_if_needed(event_row)
     event_row = get_event(event_id)
     if event_has_started_or_closed(event_row):
-        flash("Lezárt eseményhez már nem adhatsz hozzá új játékost.", "error")
+        flash("LezĂˇrt esemĂ©nyhez mĂˇr nem adhatsz hozzĂˇ Ăşj jĂˇtĂ©kost.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     name = (request.form.get("participant_name") or "").strip()
@@ -5095,19 +5233,19 @@ def admin_add_player(event_id):
     payment_method = request.form.get("payment_method", PAYMENT_METHOD_CASH)
 
     if not name:
-        flash("Adj meg játékosnevet.", "error")
+        flash("Adj meg jĂˇtĂ©kosnevet.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
     if not email or "@" not in email:
-        flash("Adj meg érvényes email címet.", "error")
+        flash("Adj meg Ă©rvĂ©nyes email cĂ­met.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
     if team_number is None or team_number < 1 or team_number > MAX_TEAMS:
-        flash("Válassz érvényes csapatot.", "error")
+        flash("VĂˇlassz Ă©rvĂ©nyes csapatot.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
     if get_registration_by_email(event_id, email):
-        flash("Erre az email címre már van jelentkezés ezen az eseményen.", "error")
+        flash("Erre az email cĂ­mre mĂˇr van jelentkezĂ©s ezen az esemĂ©nyen.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
     if event_row["has_fee"] == 1 and payment_method not in (PAYMENT_METHOD_TRANSFER, PAYMENT_METHOD_CASH):
-        flash("Fizetős eseménynél a fizetési mód csak utalás vagy készpénz lehet.", "error")
+        flash("FizetĹ‘s esemĂ©nynĂ©l a fizetĂ©si mĂłd csak utalĂˇs vagy kĂ©szpĂ©nz lehet.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     try:
@@ -5124,12 +5262,12 @@ def admin_add_player(event_id):
 
     reg = get_registration_by_id(registration_id)
     if not reg:
-        flash("A játékost nem sikerült létrehozni.", "error")
+        flash("A jĂˇtĂ©kost nem sikerĂĽlt lĂ©trehozni.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     if get_current_team_size(event_id, team_number) >= MAX_TEAM_SIZE and reg["assigned_team"] != team_number:
         execute("UPDATE registrations SET is_manual = 1 WHERE id = ? ", (registration_id,))
-        flash("A játékos hozzáadva, de a kiválasztott csapat tele van (max 4 fő).", "info")
+        flash("A jĂˇtĂ©kos hozzĂˇadva, de a kivĂˇlasztott csapat tele van (max 4 fĹ‘).", "info")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     slot = get_current_team_size(event_id, team_number) + 1
@@ -5144,7 +5282,7 @@ def admin_add_player(event_id):
     )
     activate_stored_team_name_idea(registration_id)
     activate_stored_team_avatar_idea(registration_id)
-    flash("Ášj játékos hozzáadva a csapathoz.", "success")
+    flash("ĂĹˇj jĂˇtĂ©kos hozzĂˇadva a csapathoz.", "success")
     return redirect(url_for("admin_teams", event_id=event_id))
 
 
@@ -5153,7 +5291,7 @@ def admin_add_player(event_id):
 def admin_remove_from_team(registration_id):
     reg = get_registration_by_id(registration_id)
     if not reg:
-        flash("A játékos nem található.", "error")
+        flash("A jĂˇtĂ©kos nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     detach_fixed_partner_links(registration_id)
@@ -5171,7 +5309,7 @@ def admin_remove_from_team(registration_id):
         WHERE id = ? """,
         (registration_id,),
     )
-    flash("A játékos kikerült a csapatból.", "success")
+    flash("A jĂˇtĂ©kos kikerĂĽlt a csapatbĂłl.", "success")
     return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
 
@@ -5180,7 +5318,7 @@ def admin_remove_from_team(registration_id):
 def admin_delete_player(registration_id):
     reg = get_registration_by_id(registration_id)
     if not reg:
-        flash("A játékos nem található.", "error")
+        flash("A jĂˇtĂ©kos nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     detach_fixed_partner_links(registration_id)
@@ -5197,7 +5335,7 @@ def admin_delete_player(registration_id):
         WHERE id = ? """,
         (registration_id,),
     )
-    flash("A jelentkező végleg törölve.", "success")
+    flash("A jelentkezĹ‘ vĂ©gleg tĂ¶rĂ¶lve.", "success")
     return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
 
@@ -5206,35 +5344,35 @@ def admin_delete_player(registration_id):
 def admin_approve_fixed_partner(registration_id):
     reg = get_registration_by_id(registration_id)
     if not reg:
-        flash("A játékos nem található.", "error")
+        flash("A jĂˇtĂ©kos nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     if reg["assigned_team"] is None or reg["assigned_stage"] != 2:
-        flash("Ez a játékos jelenleg nem fix csapattárs-várakozó állapotban van.", "error")
+        flash("Ez a jĂˇtĂ©kos jelenleg nem fix csapattĂˇrs-vĂˇrakozĂł Ăˇllapotban van.", "error")
         return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
     if reg["teammate_preference"] != TEAM_PREF_FIXED:
-        flash("A játékos nem fix csapattárs módot választott.", "error")
+        flash("A jĂˇtĂ©kos nem fix csapattĂˇrs mĂłdot vĂˇlasztott.", "error")
         return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
     if reg["fixed_partner_registration_id"]:
-        flash("A fix csapattárs már párosítva lett.", "info")
+        flash("A fix csapattĂˇrs mĂˇr pĂˇrosĂ­tva lett.", "info")
         return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
     if not (reg["fixed_partner_name"] or "").strip():
-        flash("Nincs megadott fix csapattárs név ehhez a jóváhagyáshoz.", "error")
+        flash("Nincs megadott fix csapattĂˇrs nĂ©v ehhez a jĂłvĂˇhagyĂˇshoz.", "error")
         return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
     team_members = get_stage2_team_members(reg["event_id"], reg["assigned_team"])
     if len(team_members) != 1 or team_members[0]["id"] != registration_id:
-        flash("A csapat állapota időközben megváltozott, nem jóváhagyható.", "error")
+        flash("A csapat Ăˇllapota idĹ‘kĂ¶zben megvĂˇltozott, nem jĂłvĂˇhagyhatĂł.", "error")
         return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
     execute(
         "UPDATE registrations SET fixed_partner_approved_by_admin = 1 WHERE id = ? ",
         (registration_id,),
     )
-    flash("A fix csapattárs szervezői jóváhagyása mentve.", "success")
+    flash("A fix csapattĂˇrs szervezĹ‘i jĂłvĂˇhagyĂˇsa mentve.", "success")
     return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
 
@@ -5243,27 +5381,27 @@ def admin_approve_fixed_partner(registration_id):
 def admin_move_player(registration_id):
     reg = get_registration_by_id(registration_id)
     if not reg:
-        flash("A játékos nem található.", "error")
+        flash("A jĂˇtĂ©kos nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     event_id = reg["event_id"]
     team_number = request.form.get("team_number", type=int)
     if team_number is None or team_number < 1 or team_number > 5:
-        flash("Á‰rvénytelen csapat.", "error")
+        flash("Ăâ€°rvĂ©nytelen csapat.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     if reg["payment_status"] == PAYMENT_INVALID:
-        flash("Á‰rvénytelen státuszú játékos nem tehető aktív csapatba.", "error")
+        flash("Ăâ€°rvĂ©nytelen stĂˇtuszĂş jĂˇtĂ©kos nem tehetĹ‘ aktĂ­v csapatba.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     current_size = get_current_team_size(event_id, team_number)
     if current_size >= 4 and reg["assigned_team"] != team_number:
-        flash("A célcsapat már elérte a maximum 4 főt.", "error")
+        flash("A cĂ©lcsapat mĂˇr elĂ©rte a maximum 4 fĹ‘t.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     slot = current_size + 1
     if reg["assigned_team"] == team_number:
-        flash("A játékos már ebben a csapatban van.", "info")
+        flash("A jĂˇtĂ©kos mĂˇr ebben a csapatban van.", "info")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     execute(
@@ -5277,7 +5415,7 @@ def admin_move_player(registration_id):
     )
     activate_stored_team_name_idea(registration_id)
     activate_stored_team_avatar_idea(registration_id)
-    flash("A játékos áthelyezve.", "success")
+    flash("A jĂˇtĂ©kos Ăˇthelyezve.", "success")
     return redirect(url_for("admin_teams", event_id=event_id))
 
 
@@ -5286,15 +5424,15 @@ def admin_move_player(registration_id):
 def admin_update_virtual_partner_payment(registration_id):
     reg = get_registration_by_id(registration_id)
     if not reg:
-        flash("A játékos nem található.", "error")
+        flash("A jĂˇtĂ©kos nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     if reg["teammate_preference"] != TEAM_PREF_FIXED or reg["fixed_partner_registration_id"]:
-        flash("Ehhez a jelentkezőhöz nem tartozik kézzel megadott fix csapattárs.", "error")
+        flash("Ehhez a jelentkezĹ‘hĂ¶z nem tartozik kĂ©zzel megadott fix csapattĂˇrs.", "error")
         return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
     if not (reg["fixed_partner_name"] or "").strip():
-        flash("A fix csapattárs neve hiányzik.", "error")
+        flash("A fix csapattĂˇrs neve hiĂˇnyzik.", "error")
         return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
     payment_status = request.form.get("payment_status", PAYMENT_PENDING)
@@ -5302,11 +5440,11 @@ def admin_update_virtual_partner_payment(registration_id):
     payment_note = request.form.get("payment_note", "").strip()
 
     if payment_status not in (PAYMENT_PENDING, PAYMENT_PAID, PAYMENT_INVALID):
-        flash("Érvénytelen fizetési státusz.", "error")
+        flash("Ă‰rvĂ©nytelen fizetĂ©si stĂˇtusz.", "error")
         return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
     if payment_method not in (PAYMENT_METHOD_TRANSFER, PAYMENT_METHOD_CASH, PAYMENT_METHOD_NONE):
-        flash("Érvénytelen fizetési mód.", "error")
+        flash("Ă‰rvĂ©nytelen fizetĂ©si mĂłd.", "error")
         return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
     execute(
@@ -5319,7 +5457,7 @@ def admin_update_virtual_partner_payment(registration_id):
         WHERE id = ? """,
         (payment_status, payment_method, payment_note, registration_id),
     )
-    flash("A fix csapattárs fizetési státusza frissítve.", "success")
+    flash("A fix csapattĂˇrs fizetĂ©si stĂˇtusza frissĂ­tve.", "success")
     return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
 
@@ -5328,7 +5466,7 @@ def admin_update_virtual_partner_payment(registration_id):
 def admin_update_payment(registration_id):
     reg = get_registration_by_id(registration_id)
     if not reg:
-        flash("A játékos nem található.", "error")
+        flash("A jĂˇtĂ©kos nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     payment_status = request.form.get("payment_status", PAYMENT_PENDING)
@@ -5336,11 +5474,11 @@ def admin_update_payment(registration_id):
     payment_note = request.form.get("payment_note", "").strip()
 
     if payment_status not in (PAYMENT_PENDING, PAYMENT_PAID, PAYMENT_INVALID):
-        flash("Á‰rvénytelen fizetési státusz.", "error")
+        flash("Ăâ€°rvĂ©nytelen fizetĂ©si stĂˇtusz.", "error")
         return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
     if payment_method not in (PAYMENT_METHOD_TRANSFER, PAYMENT_METHOD_CASH, PAYMENT_METHOD_NONE):
-        flash("Á‰rvénytelen fizetési mód.", "error")
+        flash("Ăâ€°rvĂ©nytelen fizetĂ©si mĂłd.", "error")
         return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
     execute(
@@ -5362,7 +5500,7 @@ def admin_update_payment(registration_id):
             (registration_id,),
         )
 
-    flash("Fizetési státusz frissítve.", "success")
+    flash("FizetĂ©si stĂˇtusz frissĂ­tve.", "success")
     return redirect(url_for("admin_teams", event_id=reg["event_id"]))
 
 
@@ -5371,12 +5509,12 @@ def admin_update_payment(registration_id):
 def admin_approve_team_name(event_id, team_number):
     event_row = get_event(event_id)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     pending = get_pending_team_name_proposal(event_id, team_number)
     if not pending:
-        flash("Ehhez a csapathoz nincs függő csapatnév-javaslat.", "info")
+        flash("Ehhez a csapathoz nincs fĂĽggĹ‘ csapatnĂ©v-javaslat.", "info")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     if team_name_exists(event_id, team_number, pending["proposed_name"]):
@@ -5384,7 +5522,7 @@ def admin_approve_team_name(event_id, team_number):
             "UPDATE team_name_proposals SET status = 'rejected', finalized_at = ? WHERE id = ? ",
             (now_str(), pending["id"]),
         )
-        flash("A csapatnév nem hagyható jóvá, mert már létezik ilyen név.", "error")
+        flash("A csapatnĂ©v nem hagyhatĂł jĂłvĂˇ, mert mĂˇr lĂ©tezik ilyen nĂ©v.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     execute(
@@ -5399,7 +5537,7 @@ def admin_approve_team_name(event_id, team_number):
         "UPDATE team_name_proposals SET status = 'approved', finalized_at = ? WHERE id = ? ",
         (now_str(), pending["id"]),
     )
-    flash("A csapatnév szervezői jóváhagyással véglegesítve.", "success")
+    flash("A csapatnĂ©v szervezĹ‘i jĂłvĂˇhagyĂˇssal vĂ©glegesĂ­tve.", "success")
     return redirect(url_for("admin_teams", event_id=event_id))
 
 
@@ -5408,7 +5546,7 @@ def admin_approve_team_name(event_id, team_number):
 def admin_rename_team(event_id, team_number):
     event_row = get_event(event_id)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     new_name = normalize_team_name(request.form.get("team_name", ""))
@@ -5417,7 +5555,7 @@ def admin_rename_team(event_id, team_number):
         return redirect(url_for("admin_teams", event_id=event_id))
 
     if team_name_exists(event_id, team_number, new_name):
-        flash("Ezen az eseményen már létezik ilyen csapatnév.", "error")
+        flash("Ezen az esemĂ©nyen mĂˇr lĂ©tezik ilyen csapatnĂ©v.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     admin_registration = query_one(
@@ -5428,7 +5566,7 @@ def admin_rename_team(event_id, team_number):
         (event_id,),
     )
     if not admin_registration:
-        flash("Ehhez a csapathoz még nincs jelentkező.", "error")
+        flash("Ehhez a csapathoz mĂ©g nincs jelentkezĹ‘.", "error")
         return redirect(url_for("admin_teams", event_id=event_id))
 
     cur = execute(
@@ -5443,7 +5581,7 @@ def admin_rename_team(event_id, team_number):
     )
     evaluate_team_name_proposal(cur.lastrowid)
 
-    flash("A csapatnév frissítve.", "success")
+    flash("A csapatnĂ©v frissĂ­tve.", "success")
     return redirect(url_for("admin_teams", event_id=event_id))
 
 
@@ -5452,7 +5590,7 @@ def admin_rename_team(event_id, team_number):
 def admin_score_sheet(event_id):
     event_row = get_event(event_id)
     if not event_row:
-        flash("Az esemény nem található.", "error")
+        flash("Az esemĂ©ny nem talĂˇlhatĂł.", "error")
         return redirect(url_for("admin_dashboard"))
 
     finalize_event_if_needed(event_row)
@@ -5504,3 +5642,4 @@ def admin_score_sheet(event_id):
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
+
