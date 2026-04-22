@@ -2002,6 +2002,25 @@ def extract_first_youtube_url(html_text):
     return match.group(0).strip() if match else ""
 
 
+def extract_tmdb_genres_from_html(html_text):
+    if not html_text:
+        return ""
+    block_match = re.search(
+        r"""<span[^>]+class=["'][^"']*\bgenres\b[^"']*["'][^>]*>(.*?)</span>""",
+        html_text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not block_match:
+        return ""
+    block = block_match.group(1)
+    genres = []
+    for label in re.findall(r"""<a[^>]*>(.*?)</a>""", block, re.IGNORECASE | re.DOTALL):
+        clean = html.unescape(strip_html_tags(label)).strip()
+        if clean and clean.lower() not in {"and", "és"}:
+            genres.append(clean)
+    return ", ".join(genres)
+
+
 def extract_tmdb_metadata(movie_title):
     query = quote_plus(movie_title)
     search_url = f"https://www.themoviedb.org/search/movie?query={query}&language=hu-HU"
@@ -2016,6 +2035,8 @@ def extract_tmdb_metadata(movie_title):
 
     poster_url = extract_og_image_url(detail_html)
     category = extract_genres_from_json_ld(detail_html)
+    if not category:
+        category = extract_tmdb_genres_from_html(detail_html)
     description = extract_meta_content(detail_html, "property", "og:description")
     if not description:
         description = extract_meta_content(detail_html, "name", "description")
