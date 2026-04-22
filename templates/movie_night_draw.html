@@ -15,6 +15,10 @@
     p { margin:0 0 12px; color:var(--muted); line-height:1.5; }
     .meta { display:flex; flex-wrap:wrap; gap:10px; margin:12px 0 0; }
     .pill { border-radius:999px; padding:6px 10px; font-size:13px; background:#eef2ff; color:#3730a3; font-weight:700; }
+    .challenge-banner { margin:14px 0 6px; border:2px solid #f59e0b; border-radius:14px; background:linear-gradient(135deg, #fffbeb, #fef3c7); padding:12px 14px; }
+    .challenge-title { margin:0 0 4px; font-size:20px; font-weight:900; color:#92400e; letter-spacing:-0.01em; }
+    .challenge-genre { display:inline-block; border-radius:999px; background:#0f172a; color:#fff; font-size:20px; font-weight:900; padding:6px 12px; }
+    .challenge-note { margin:8px 0 0; font-size:13px; font-weight:700; color:#78350f; }
     .flash { margin:12px 0; border-radius:12px; padding:10px 12px; font-weight:700; }
     .flash.success { background:var(--ok-bg); color:var(--ok); }
     .flash.info { background:#e0f2fe; color:#075985; }
@@ -92,6 +96,8 @@
       .entry-head { gap:8px; }
       .cover { width:74px; height:110px; }
       .trailer-btn { font-size:12px; padding:6px 9px; }
+      .challenge-title { font-size:18px; }
+      .challenge-genre { font-size:18px; }
       .video-head { font-size:18px; }
       .cover-modal-img { width:min(94vw, 420px); max-height:68vh; }
       .winner-hero h3 { font-size:26px; }
@@ -184,6 +190,13 @@
         <span class="pill">Heti határidő: {{ deadline_at }} (kedd)</span>
         <span class="pill">Következő újraindulás: {{ next_reset }} (szerda)</span>
       </div>
+      {% if challenge and challenge["enabled"] %}
+        <div class="challenge-banner">
+          <p class="challenge-title">Kihívás hét</p>
+          <span class="challenge-genre">{{ challenge["genre"] }}</span>
+          <p class="challenge-note">Ezen a héten csak ebben a kategóriában lehet filmet beküldeni.</p>
+        </div>
+      {% endif %}
 
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}

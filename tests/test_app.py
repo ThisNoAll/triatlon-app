@@ -757,6 +757,44 @@ class TriatlonAppTests(unittest.TestCase):
             self.assertEqual(draw["winner_name"], "Jakab")
             self.assertEqual(draw["winner_movie"], "Interstellar")
 
+    def test_movie_night_challenge_anchor_week_is_scifi(self):
+        original_testing = app_module.app.config.get("TESTING")
+        app_module.app.config["TESTING"] = False
+        try:
+            challenge = app_module.get_movie_night_challenge(app_module.MOVIE_NIGHT_CHALLENGE_ANCHOR_CYCLE)
+            self.assertTrue(challenge["enabled"])
+            self.assertEqual(challenge["genre"], "Sci-Fi")
+        finally:
+            app_module.app.config["TESTING"] = original_testing
+
+    def test_movie_night_challenge_is_every_two_weeks(self):
+        original_testing = app_module.app.config.get("TESTING")
+        app_module.app.config["TESTING"] = False
+        try:
+            anchor = datetime.strptime(app_module.MOVIE_NIGHT_CHALLENGE_ANCHOR_CYCLE, "%Y-%m-%d")
+            off_week = (anchor + timedelta(days=7)).strftime("%Y-%m-%d")
+            next_challenge = (anchor + timedelta(days=14)).strftime("%Y-%m-%d")
+
+            challenge_off = app_module.get_movie_night_challenge(off_week)
+            challenge_on = app_module.get_movie_night_challenge(next_challenge)
+
+            self.assertFalse(challenge_off["enabled"])
+            self.assertTrue(challenge_on["enabled"])
+        finally:
+            app_module.app.config["TESTING"] = original_testing
+
+    def test_movie_night_challenge_round_covers_all_genres_once(self):
+        seen = set()
+        for idx in range(len(app_module.MOVIE_NIGHT_CHALLENGE_GENRES)):
+            order = app_module.get_movie_night_challenge_order(0)
+            seen.add(order[idx])
+        self.assertEqual(seen, set(app_module.MOVIE_NIGHT_CHALLENGE_GENRES))
+
+    def test_movie_night_challenge_round_boundary_is_not_repeated(self):
+        first_round = app_module.get_movie_night_challenge_order(0)
+        second_round = app_module.get_movie_night_challenge_order(1)
+        self.assertNotEqual(first_round[-1], second_round[0])
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -108,6 +108,27 @@ MOVIE_NIGHT_AVATAR_FILES = {
 }
 MOVIE_NIGHT_STATUS_COMING = "coming"
 MOVIE_NIGHT_STATUS_NOT_COMING = "not_coming"
+MOVIE_NIGHT_CHALLENGE_ANCHOR_CYCLE = "2026-04-22"
+MOVIE_NIGHT_CHALLENGE_START_GENRE = "Sci-Fi"
+MOVIE_NIGHT_CHALLENGE_GENRES = (
+    "Akció",
+    "Thriller",
+    "Horror",
+    "Dráma",
+    "Sci-Fi",
+    "Zene",
+    "Komédia",
+    "Kaland",
+    "Háborús",
+    "Fantasy",
+    "Krimi",
+    "Animáció",
+    "Családi",
+    "Western",
+    "Romantikus",
+    "Mystery",
+)
+MOVIE_NIGHT_CHALLENGE_SHUFFLE_SEED = 24681357
 MOVIE_DB_BASE_URL = "http://movie.nhely.hu/"
 MOVIE_DB_SEARCH_URL = "http://movie.nhely.hu/?s={query}"
 MOVIE_DB_API_SEARCH_URL = "http://movie.nhely.hu/wp-json/wp/v2/posts?search={query}&per_page=20&_embed=1"
@@ -1167,6 +1188,102 @@ def movie_night_next_reset_label(cycle_key):
 def movie_night_deadline(cycle_key):
     cycle_start = datetime.strptime(cycle_key, "%Y-%m-%d")
     return (cycle_start + timedelta(days=6)).replace(hour=17, minute=0, second=0, microsecond=0)
+
+
+def normalize_genre_token(value):
+    folded = unicodedata.normalize("NFKD", value or "")
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    folded = folded.lower().replace("&", "and")
+    return re.sub(r"[^a-z0-9]+", "", folded)
+
+
+def get_movie_night_challenge_order(round_index):
+    current_round = int(round_index)
+    genres = list(MOVIE_NIGHT_CHALLENGE_GENRES)
+    random.Random(MOVIE_NIGHT_CHALLENGE_SHUFFLE_SEED + current_round).shuffle(genres)
+
+    if current_round == 0:
+        start_idx = next(
+            (
+                idx
+                for idx, genre in enumerate(genres)
+                if normalize_genre_token(genre) == normalize_genre_token(MOVIE_NIGHT_CHALLENGE_START_GENRE)
+            ),
+            None,
+        )
+        if start_idx is not None and start_idx != 0:
+            genres[0], genres[start_idx] = genres[start_idx], genres[0]
+    else:
+        previous_order = get_movie_night_challenge_order(current_round - 1)
+        if previous_order and genres and normalize_genre_token(previous_order[-1]) == normalize_genre_token(genres[0]):
+            swap_idx = next(
+                (
+                    idx
+                    for idx in range(1, len(genres))
+                    if normalize_genre_token(genres[idx]) != normalize_genre_token(genres[0])
+                ),
+                None,
+            )
+            if swap_idx is not None:
+                genres[0], genres[swap_idx] = genres[swap_idx], genres[0]
+    return genres
+
+
+def get_movie_night_challenge(cycle_key):
+    if app.config.get("TESTING"):
+        return {
+            "enabled": False,
+            "genre": "",
+            "round_index": 0,
+            "genre_index": 0,
+        }
+
+    cycle_start = datetime.strptime(cycle_key, "%Y-%m-%d")
+    anchor = datetime.strptime(MOVIE_NIGHT_CHALLENGE_ANCHOR_CYCLE, "%Y-%m-%d")
+    delta_days = (cycle_start - anchor).days
+    delta_weeks = delta_days // 7
+
+    if delta_weeks < 0:
+        return {
+            "enabled": False,
+            "genre": "",
+            "round_index": 0,
+            "genre_index": 0,
+        }
+
+    if delta_weeks % 2 != 0:
+        return {
+            "enabled": False,
+            "genre": "",
+            "round_index": delta_weeks // (2 * len(MOVIE_NIGHT_CHALLENGE_GENRES)),
+            "genre_index": -1,
+        }
+
+    challenge_step = delta_weeks // 2
+    genre_count = len(MOVIE_NIGHT_CHALLENGE_GENRES)
+    round_index = challenge_step // genre_count
+    genre_index = challenge_step % genre_count
+    order = get_movie_night_challenge_order(round_index)
+    return {
+        "enabled": True,
+        "genre": order[genre_index],
+        "round_index": round_index + 1,
+        "genre_index": genre_index + 1,
+    }
+
+
+def movie_category_matches_required(movie_category, required_genre):
+    if not required_genre:
+        return True
+    if not movie_category:
+        return False
+    required = normalize_genre_token(required_genre)
+    parts = [
+        normalize_genre_token(part)
+        for part in re.split(r"[,/;|]+", movie_category)
+        if normalize_genre_token(part)
+    ]
+    return required in parts
 
 
 def finalize_movie_night_cycle(cycle_key):
@@ -4192,6 +4309,7 @@ def finalize_team_names_for_event(event_id):
 @app.route("/film-est-sorsolo", methods=["GET", "POST"])
 def movie_night_draw():
     cycle_key = movie_night_cycle_key()
+    challenge = get_movie_night_challenge(cycle_key)
     draw = finalize_movie_night_cycle_if_due(cycle_key)
     deadline_at = movie_night_deadline(cycle_key)
 
@@ -4245,6 +4363,18 @@ def movie_night_draw():
             movie_category = (metadata.get("movie_category") or "").strip()
             movie_description = (metadata.get("movie_description") or "").strip()
             trailer_url = (metadata.get("trailer_url") or "").strip()
+
+            if challenge.get("enabled"):
+                challenge_genre = challenge.get("genre", "")
+                source_category = movie_category or (matched_details.get("movie_category") or "").strip()
+                if not movie_category and source_category:
+                    movie_category = source_category
+                if not movie_category_matches_required(source_category, challenge_genre):
+                    flash(
+                        f"Kihívás hét: csak {challenge_genre} kategóriájú film küldhető be.",
+                        "error",
+                    )
+                    return redirect(url_for("movie_night_draw"))
 
         existing = query_one(
             """
@@ -4346,6 +4476,7 @@ def movie_night_draw():
         next_reset=movie_night_next_reset_label(cycle_key),
         deadline_at=deadline_at.strftime("%Y-%m-%d %H:%M"),
         missing_names=missing_names,
+        challenge=challenge,
     )
 
 
