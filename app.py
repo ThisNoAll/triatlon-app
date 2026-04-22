@@ -1021,6 +1021,7 @@ def ensure_movie_night_schema(db):
                     poster_source TEXT,
                     movie_category TEXT,
                     movie_description TEXT,
+                    trailer_url TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(cycle_key, participant_name)
@@ -1058,6 +1059,7 @@ def ensure_movie_night_schema(db):
                     poster_source TEXT,
                     movie_category TEXT,
                     movie_description TEXT,
+                    trailer_url TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(cycle_key, participant_name)
@@ -1100,6 +1102,8 @@ def ensure_movie_night_schema(db):
         execute("ALTER TABLE movie_night_entries ADD COLUMN movie_category TEXT")
     if "movie_description" not in columns:
         execute("ALTER TABLE movie_night_entries ADD COLUMN movie_description TEXT")
+    if "trailer_url" not in columns:
+        execute("ALTER TABLE movie_night_entries ADD COLUMN trailer_url TEXT")
     execute(
         """
         UPDATE movie_night_entries
@@ -1175,14 +1179,17 @@ def finalize_movie_night_cycle(cycle_key):
         execute(
             """
             INSERT INTO movie_night_entries (
-                cycle_key, participant_name, attendance_status, movie_title, poster_url, poster_source, created_at, updated_at
+                cycle_key, participant_name, attendance_status, movie_title, poster_url, poster_source, movie_category, movie_description, trailer_url, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 cycle_key,
                 name,
                 MOVIE_NIGHT_STATUS_NOT_COMING,
+                "",
+                "",
+                "",
                 "",
                 "",
                 "",
@@ -1229,7 +1236,7 @@ def finalize_movie_night_cycle_if_due(cycle_key, now=None):
 def get_movie_night_entries(cycle_key):
     rows = query_all(
         """
-        SELECT participant_name, attendance_status, movie_title, poster_url, poster_source, movie_category, movie_description, created_at, updated_at
+        SELECT participant_name, attendance_status, movie_title, poster_url, poster_source, movie_category, movie_description, trailer_url, created_at, updated_at
         FROM movie_night_entries
         WHERE cycle_key = ?
         """,
@@ -1240,7 +1247,11 @@ def get_movie_night_entries(cycle_key):
     for name in MOVIE_NIGHT_ALLOWED_NAMES:
         row = by_name.get(name)
         if row:
-            ordered.append(row)
+            entry = dict(row) if hasattr(row, "keys") else row
+            trailer_url = (entry.get("trailer_url") or "").strip()
+            entry["trailer_url"] = trailer_url
+            entry["trailer_embed_url"] = normalize_youtube_embed_url(trailer_url)
+            ordered.append(entry)
     return ordered
 
 
@@ -1620,11 +1631,18 @@ def extract_movie_db_detail_metadata(detail_html):
         re.IGNORECASE,
     )
     poster_url = urljoin(MOVIE_DB_BASE_URL, poster_match.group(1).strip()) if poster_match else ""
+    trailer_match = re.search(
+        r"""<a\s+href=["'](https?://(?:www\.)?youtube\.com/watch\?v=[^"']+)["']""",
+        detail_html,
+        re.IGNORECASE,
+    )
+    trailer_url = trailer_match.group(1).strip() if trailer_match else ""
 
     return {
         "movie_category": category,
         "movie_description": description,
         "poster_url": poster_url,
+        "trailer_url": trailer_url,
         "poster_source": "movie.nhely.hu",
     }
 
@@ -1645,6 +1663,8 @@ def enrich_movie_db_candidate(candidate):
         candidate["movie_category"] = detail["movie_category"]
     if detail.get("movie_description"):
         candidate["movie_description"] = detail["movie_description"]
+    if detail.get("trailer_url"):
+        candidate["trailer_url"] = detail["trailer_url"]
     candidate["poster_source"] = "movie.nhely.hu"
     return candidate
 
@@ -1673,6 +1693,7 @@ def find_best_movie_db_candidate(movie_title):
     best["title"] = cleanup_movie_display_title(best.get("title", ""))
     best.setdefault("movie_category", "")
     best.setdefault("movie_description", "")
+    best.setdefault("trailer_url", "")
     best.setdefault("poster_source", "movie.nhely.hu")
     return enrich_movie_db_candidate(best)
 
@@ -1853,6 +1874,17 @@ def sanitize_description(value):
     return re.sub(r"\s+", " ", (value or "").strip())
 
 
+def extract_first_youtube_url(html_text):
+    if not html_text:
+        return ""
+    match = re.search(
+        r"""https?://(?:www\.)?(?:youtube\.com/watch\?v=[A-Za-z0-9_-]{6,}|youtu\.be/[A-Za-z0-9_-]{6,})[^\s"'<>]*""",
+        html_text,
+        re.IGNORECASE,
+    )
+    return match.group(0).strip() if match else ""
+
+
 def extract_tmdb_metadata(movie_title):
     query = quote_plus(movie_title)
     search_url = f"https://www.themoviedb.org/search/movie?query={query}&language=hu-HU"
@@ -1870,13 +1902,15 @@ def extract_tmdb_metadata(movie_title):
     description = extract_meta_content(detail_html, "property", "og:description")
     if not description:
         description = extract_meta_content(detail_html, "name", "description")
+    trailer_url = extract_first_youtube_url(detail_html)
 
-    if not poster_url and not category and not description:
+    if not poster_url and not category and not description and not trailer_url:
         return {}
     return {
         "poster_url": poster_url,
         "movie_category": category,
         "movie_description": sanitize_description(description),
+        "trailer_url": trailer_url,
         "poster_source": "tmdb",
     }
 
@@ -1896,13 +1930,15 @@ def extract_imdb_metadata(movie_title):
     description = extract_meta_content(detail_html, "property", "og:description")
     if not description:
         description = extract_meta_content(detail_html, "name", "description")
+    trailer_url = extract_first_youtube_url(detail_html)
 
-    if not poster_url and not category and not description:
+    if not poster_url and not category and not description and not trailer_url:
         return {}
     return {
         "poster_url": poster_url,
         "movie_category": category,
         "movie_description": sanitize_description(description),
+        "trailer_url": trailer_url,
         "poster_source": "imdb",
     }
 
@@ -1913,6 +1949,7 @@ def lookup_movie_metadata(movie_title):
             "poster_url": "",
             "movie_category": "",
             "movie_description": "",
+            "trailer_url": "",
             "poster_source": "",
         }
 
@@ -1937,6 +1974,7 @@ def lookup_movie_metadata(movie_title):
                 "poster_url": candidate.get("poster_url", ""),
                 "movie_category": candidate.get("movie_category", ""),
                 "movie_description": sanitize_description(candidate.get("movie_description", "")),
+                "trailer_url": candidate.get("trailer_url", ""),
                 "poster_source": "movie.nhely.hu",
             }
     except Exception:
@@ -1946,6 +1984,7 @@ def lookup_movie_metadata(movie_title):
         "poster_url": "",
         "movie_category": "",
         "movie_description": "",
+        "trailer_url": "",
         "poster_source": "",
     }
 
@@ -2000,7 +2039,7 @@ def backfill_movie_night_missing_posters(cycle_key, entries):
     for entry in entries:
         if entry["attendance_status"] == MOVIE_NIGHT_STATUS_NOT_COMING:
             continue
-        if entry["poster_url"] and (entry["movie_category"] or entry["movie_description"]):
+        if entry["poster_url"] and (entry["movie_category"] or entry["movie_description"] or entry["trailer_url"]):
             continue
         title = (entry["movie_title"] or "").strip()
         if not title:
@@ -2010,14 +2049,15 @@ def backfill_movie_night_missing_posters(cycle_key, entries):
         poster_source = (metadata.get("poster_source") or "").strip()
         movie_category = (metadata.get("movie_category") or "").strip()
         movie_description = (metadata.get("movie_description") or "").strip()
+        trailer_url = (metadata.get("trailer_url") or "").strip()
 
-        if not poster_url and not movie_category and not movie_description:
+        if not poster_url and not movie_category and not movie_description and not trailer_url:
             continue
 
         execute(
             """
             UPDATE movie_night_entries
-            SET poster_url = ?, poster_source = ?, movie_category = ?, movie_description = ?, updated_at = ?
+            SET poster_url = ?, poster_source = ?, movie_category = ?, movie_description = ?, trailer_url = ?, updated_at = ?
             WHERE cycle_key = ? AND participant_name = ?
             """,
             (
@@ -2025,6 +2065,7 @@ def backfill_movie_night_missing_posters(cycle_key, entries):
                 poster_source,
                 movie_category,
                 movie_description,
+                trailer_url,
                 now_str(),
                 cycle_key,
                 entry["participant_name"],
@@ -4182,12 +4223,14 @@ def movie_night_draw():
 
         movie_category = ""
         movie_description = ""
+        trailer_url = ""
         if attendance_status == MOVIE_NIGHT_STATUS_NOT_COMING:
             movie_title = ""
             poster_url = ""
             poster_source = ""
             movie_category = ""
             movie_description = ""
+            trailer_url = ""
         else:
             is_valid_title, matched_title, validation_message, matched_details = validate_movie_title_with_movie_db(
                 movie_title
@@ -4201,6 +4244,7 @@ def movie_night_draw():
             poster_source = (metadata.get("poster_source") or "").strip()
             movie_category = (metadata.get("movie_category") or "").strip()
             movie_description = (metadata.get("movie_description") or "").strip()
+            trailer_url = (metadata.get("trailer_url") or "").strip()
 
         existing = query_one(
             """
@@ -4215,7 +4259,7 @@ def movie_night_draw():
             execute(
                 """
                 UPDATE movie_night_entries
-                SET attendance_status = ?, movie_title = ?, poster_url = ?, poster_source = ?, movie_category = ?, movie_description = ?, updated_at = ?
+                SET attendance_status = ?, movie_title = ?, poster_url = ?, poster_source = ?, movie_category = ?, movie_description = ?, trailer_url = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -4225,6 +4269,7 @@ def movie_night_draw():
                     poster_source,
                     movie_category,
                     movie_description,
+                    trailer_url,
                     now_str(),
                     existing["id"],
                 ),
@@ -4234,9 +4279,9 @@ def movie_night_draw():
             execute(
                 """
                 INSERT INTO movie_night_entries (
-                    cycle_key, participant_name, attendance_status, movie_title, poster_url, poster_source, movie_category, movie_description, created_at, updated_at
+                    cycle_key, participant_name, attendance_status, movie_title, poster_url, poster_source, movie_category, movie_description, trailer_url, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     cycle_key,
@@ -4247,6 +4292,7 @@ def movie_night_draw():
                     poster_source,
                     movie_category,
                     movie_description,
+                    trailer_url,
                     now_str(),
                     now_str(),
                 ),
@@ -4301,6 +4347,11 @@ def movie_night_draw():
         deadline_at=deadline_at.strftime("%Y-%m-%d %H:%M"),
         missing_names=missing_names,
     )
+
+
+@app.route("/healthz")
+def healthz():
+    return {"status": "ok", "time": now_str()}, 200
 
 
 @app.route("/")

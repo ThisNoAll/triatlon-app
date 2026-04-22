@@ -34,7 +34,42 @@
     .movie-title { display:block; margin-bottom:1px; font-size:24px; line-height:1.08; letter-spacing:-0.01em; font-weight:800; color:#0f172a; overflow-wrap:anywhere; }
     .person-name { color:#334155; font-size:18px; font-weight:700; }
     .movie-meta { color:#1e3a8a; font-size:13px; font-weight:700; }
-    .movie-description { color:#475569; font-size:14px; line-height:1.35; margin-top:2px; }
+    .movie-description { color:#475569; font-size:14px; line-height:1.45; margin-top:2px; text-align:justify; }
+    .trailer-row { margin-top:6px; }
+    .trailer-btn {
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      border:1px solid #fecaca;
+      background:#fff5f5;
+      color:#991b1b;
+      border-radius:999px;
+      padding:6px 10px;
+      font-size:13px;
+      font-weight:700;
+      cursor:pointer;
+    }
+    .trailer-btn:hover { background:#fee2e2; }
+    .yt-dot {
+      width:18px;
+      height:13px;
+      border-radius:4px;
+      background:#ef4444;
+      position:relative;
+      flex-shrink:0;
+    }
+    .yt-dot::before {
+      content:"";
+      position:absolute;
+      top:50%;
+      left:50%;
+      transform:translate(-35%,-50%);
+      width:0;
+      height:0;
+      border-top:4px solid transparent;
+      border-bottom:4px solid transparent;
+      border-left:6px solid #fff;
+    }
     .movie-empty { color:#475569; font-size:18px; font-weight:500; }
     .cover { width:64px; height:96px; object-fit:cover; border-radius:10px; border:1px solid #cbd5e1; background:#e2e8f0; box-shadow:0 4px 10px rgba(15,23,42,.08); flex-shrink:0; }
     .winner-hero { margin-top:14px; margin-bottom:16px; border-radius:18px; border:2px solid #86efac; background:linear-gradient(135deg, #ecfdf5, #ecfeff); box-shadow:0 14px 30px rgba(16,185,129,.18); padding:18px; }
@@ -52,9 +87,55 @@
       .movie-title { font-size:20px; }
       .person-name, .movie-empty { font-size:17px; }
       .cover { width:68px; height:102px; }
+      .trailer-btn { font-size:12px; padding:6px 9px; }
       .winner-hero h3 { font-size:26px; }
       .winner-movie { font-size:34px; }
       .winner-meta { font-size:16px; }
+    }
+
+    .video-modal {
+      position:fixed;
+      inset:0;
+      z-index:80;
+      background:rgba(15,23,42,.82);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:14px;
+    }
+    .video-modal.open { display:flex; }
+    .video-shell {
+      width:min(960px, 100%);
+      background:#0b1220;
+      border:1px solid #1e293b;
+      border-radius:14px;
+      overflow:hidden;
+      box-shadow:0 20px 50px rgba(2,6,23,.55);
+    }
+    .video-head {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:10px 12px;
+      background:#0f172a;
+      color:#e2e8f0;
+      font-weight:700;
+    }
+    .video-close {
+      border:0;
+      border-radius:10px;
+      padding:8px 10px;
+      background:#1f2937;
+      color:#f8fafc;
+      cursor:pointer;
+      font-weight:700;
+    }
+    .video-frame {
+      width:100%;
+      aspect-ratio:16 / 9;
+      border:0;
+      display:block;
+      background:#000;
     }
   </style>
 </head>
@@ -137,6 +218,19 @@
                     {% if entry["movie_description"] %}
                       <span class="movie-description">{{ entry["movie_description"] }}</span>
                     {% endif %}
+                    {% if entry["trailer_embed_url"] %}
+                      <div class="trailer-row">
+                        <button
+                          type="button"
+                          class="trailer-btn"
+                          data-trailer-title="{{ entry['movie_title'] }}"
+                          data-trailer-src="{{ entry['trailer_embed_url'] }}"
+                        >
+                          <span class="yt-dot" aria-hidden="true"></span>
+                          Előzetes megnyitása
+                        </button>
+                      </div>
+                    {% endif %}
                   {% endif %}
                 {% else %}
                   <span class="person-name">{{ name }}</span>
@@ -161,6 +255,15 @@
       <p class="small">A sorsolás szerdánként automatikusan újraindul.</p>
     </section>
   </main>
+  <div id="video-modal" class="video-modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="video-shell">
+      <div class="video-head">
+        <span id="video-title">YouTube előzetes</span>
+        <button id="video-close" class="video-close" type="button">Bezárás</button>
+      </div>
+      <iframe id="video-frame" class="video-frame" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture"></iframe>
+    </div>
+  </div>
   <script>
     (function () {
       const statusField = document.getElementById("attendance_status");
@@ -176,6 +279,40 @@
 
       statusField.addEventListener("change", syncMovieInputState);
       syncMovieInputState();
+    })();
+
+    (function () {
+      const modal = document.getElementById("video-modal");
+      const frame = document.getElementById("video-frame");
+      const title = document.getElementById("video-title");
+      const closeBtn = document.getElementById("video-close");
+      if (!modal || !frame || !title || !closeBtn) return;
+
+      function closeModal() {
+        frame.src = "";
+        modal.classList.remove("open");
+        modal.setAttribute("aria-hidden", "true");
+      }
+
+      document.querySelectorAll(".trailer-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const src = btn.getAttribute("data-trailer-src");
+          if (!src) return;
+          const movieTitle = btn.getAttribute("data-trailer-title") || "YouTube előzetes";
+          title.textContent = movieTitle + " – előzetes";
+          frame.src = src + (src.includes("?") ? "&" : "?") + "autoplay=1";
+          modal.classList.add("open");
+          modal.setAttribute("aria-hidden", "false");
+        });
+      });
+
+      closeBtn.addEventListener("click", closeModal);
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) closeModal();
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && modal.classList.contains("open")) closeModal();
+      });
     })();
   </script>
 </body>
