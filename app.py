@@ -4317,6 +4317,7 @@ def movie_night_draw():
         draw = draw or finalize_movie_night_cycle_if_due(cycle_key)
         name = (request.form.get("name") or "").strip()
         attendance_status = (request.form.get("attendance_status") or MOVIE_NIGHT_STATUS_COMING).strip()
+        use_custom_movie = (request.form.get("use_custom_movie") or "").strip().lower() in ("1", "true", "on", "yes")
         movie_title = " ".join((request.form.get("movie_title") or "").split())
 
         if name not in MOVIE_NIGHT_ALLOWED_NAMES:
@@ -4350,31 +4351,38 @@ def movie_night_draw():
             movie_description = ""
             trailer_url = ""
         else:
-            is_valid_title, matched_title, validation_message, matched_details = validate_movie_title_with_movie_db(
-                movie_title
-            )
-            if not is_valid_title:
-                flash(validation_message, "error")
-                return redirect(url_for("movie_night_draw"))
-            movie_title = matched_title
-            metadata = lookup_movie_metadata(movie_title)
-            poster_url = (metadata.get("poster_url") or "").strip()
-            poster_source = (metadata.get("poster_source") or "").strip()
-            movie_category = (metadata.get("movie_category") or "").strip()
-            movie_description = (metadata.get("movie_description") or "").strip()
-            trailer_url = (metadata.get("trailer_url") or "").strip()
-
-            if challenge.get("enabled"):
-                challenge_genre = challenge.get("genre", "")
-                source_category = movie_category or (matched_details.get("movie_category") or "").strip()
-                if not movie_category and source_category:
-                    movie_category = source_category
-                if not movie_category_matches_required(source_category, challenge_genre):
-                    flash(
-                        f"Kihívás hét: csak {challenge_genre} kategóriájú film küldhető be.",
-                        "error",
-                    )
+            if use_custom_movie:
+                poster_url = ""
+                poster_source = ""
+                movie_category = ""
+                movie_description = ""
+                trailer_url = ""
+            else:
+                is_valid_title, matched_title, validation_message, matched_details = validate_movie_title_with_movie_db(
+                    movie_title
+                )
+                if not is_valid_title:
+                    flash(validation_message, "error")
                     return redirect(url_for("movie_night_draw"))
+                movie_title = matched_title
+                metadata = lookup_movie_metadata(movie_title)
+                poster_url = (metadata.get("poster_url") or "").strip()
+                poster_source = (metadata.get("poster_source") or "").strip()
+                movie_category = (metadata.get("movie_category") or "").strip()
+                movie_description = (metadata.get("movie_description") or "").strip()
+                trailer_url = (metadata.get("trailer_url") or "").strip()
+
+                if challenge.get("enabled"):
+                    challenge_genre = challenge.get("genre", "")
+                    source_category = movie_category or (matched_details.get("movie_category") or "").strip()
+                    if not movie_category and source_category:
+                        movie_category = source_category
+                    if not movie_category_matches_required(source_category, challenge_genre):
+                        flash(
+                            f"Kihívás hét: csak {challenge_genre} kategóriájú film küldhető be.",
+                            "error",
+                        )
+                        return redirect(url_for("movie_night_draw"))
 
         existing = query_one(
             """
