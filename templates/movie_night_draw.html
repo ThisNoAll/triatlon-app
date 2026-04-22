@@ -15,6 +15,8 @@
     p { margin:0 0 12px; color:var(--muted); line-height:1.5; }
     .meta { display:flex; flex-wrap:wrap; gap:10px; margin:12px 0 0; }
     .pill { border-radius:999px; padding:6px 10px; font-size:13px; background:#eef2ff; color:#3730a3; font-weight:700; }
+    .countdown-banner { margin:12px 0 4px; border:1px solid #bfdbfe; border-radius:12px; background:#eff6ff; color:#1e3a8a; padding:9px 12px; font-weight:800; font-size:14px; }
+    .countdown-banner.closed { border-color:#fde68a; background:#fef3c7; color:#92400e; }
     .challenge-banner { margin:14px 0 6px; border:2px solid #f59e0b; border-radius:14px; background:linear-gradient(135deg, #fffbeb, #fef3c7); padding:12px 14px; }
     .challenge-title { margin:0 0 4px; font-size:20px; font-weight:900; color:#92400e; letter-spacing:-0.01em; }
     .challenge-genre { display:inline-block; border-radius:999px; background:#0f172a; color:#fff; font-size:20px; font-weight:900; padding:6px 12px; }
@@ -102,6 +104,7 @@
       .trailer-btn { font-size:12px; padding:6px 9px; }
       .challenge-title { font-size:18px; }
       .challenge-genre { font-size:18px; }
+      .countdown-banner { font-size:13px; }
       .video-head { font-size:18px; }
       .cover-modal-img { width:min(94vw, 420px); max-height:68vh; }
       .winner-hero h3 { font-size:26px; }
@@ -196,6 +199,7 @@
         <span class="pill">Heti határidő: {{ deadline_at }} (kedd)</span>
         <span class="pill">Következő újraindulás: {{ next_reset }} (szerda)</span>
       </div>
+      <div id="deadline-countdown" class="countdown-banner" data-deadline="{{ deadline_at_iso }}"></div>
       {% if challenge and challenge["enabled"] %}
         <div class="challenge-banner">
           <p class="challenge-title">Kihívás hét</p>
@@ -347,6 +351,48 @@
     </div>
   </div>
   <script>
+    (function () {
+      const countdown = document.getElementById("deadline-countdown");
+      if (!countdown) return;
+
+      const deadlineRaw = countdown.getAttribute("data-deadline") || "";
+      const deadline = new Date(deadlineRaw);
+      if (Number.isNaN(deadline.getTime())) {
+        countdown.textContent = "A heti határidő hamarosan lejár.";
+        return;
+      }
+
+      function pluralize(num, one, many) {
+        return num === 1 ? one : many;
+      }
+
+      function renderCountdown() {
+        const now = new Date();
+        const diffMs = deadline.getTime() - now.getTime();
+        if (diffMs <= 0) {
+          countdown.classList.add("closed");
+          countdown.textContent = "A heti leadási határidő lejárt. A sorsolás lezárult vagy lezárás alatt van.";
+          return;
+        }
+
+        const totalSec = Math.floor(diffMs / 1000);
+        const days = Math.floor(totalSec / 86400);
+        const hours = Math.floor((totalSec % 86400) / 3600);
+        const minutes = Math.floor((totalSec % 3600) / 60);
+        const seconds = totalSec % 60;
+
+        const parts = [];
+        if (days > 0) parts.push(`${days} ${pluralize(days, "nap", "nap")}`);
+        parts.push(`${hours.toString().padStart(2, "0")} óra`);
+        parts.push(`${minutes.toString().padStart(2, "0")} perc`);
+        parts.push(`${seconds.toString().padStart(2, "0")} mp`);
+        countdown.textContent = `Hátralévő idő a leadásig: ${parts.join(" ")}`;
+      }
+
+      renderCountdown();
+      setInterval(renderCountdown, 1000);
+    })();
+
     (function () {
       const statusField = document.getElementById("attendance_status");
       const movieField = document.getElementById("movie_title");

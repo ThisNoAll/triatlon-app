@@ -4514,6 +4514,7 @@ def movie_night_draw():
         cycle_key=cycle_key,
         next_reset=movie_night_next_reset_label(cycle_key),
         deadline_at=deadline_at.strftime("%Y-%m-%d %H:%M"),
+        deadline_at_iso=deadline_at.strftime("%Y-%m-%dT%H:%M:%S"),
         missing_names=missing_names,
         challenge=challenge,
     )
