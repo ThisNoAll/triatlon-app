@@ -31,6 +31,8 @@
     .item { border:1px solid var(--line); border-radius:14px; padding:10px 12px; background:#f8fafc; display:flex; align-items:center; gap:12px; width:100%; max-width:100%; min-width:0; }
     .avatar { width:52px; height:52px; border-radius:50%; object-fit:cover; border:2px solid #d7e2f0; background:#e2e8f0; flex-shrink:0; }
     .person { min-width:0; flex:1 1 auto; display:grid; gap:3px; }
+    .entry-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .entry-head-main { min-width:0; flex:1 1 auto; display:grid; gap:2px; }
     .movie-title { display:block; margin-bottom:1px; font-size:24px; line-height:1.08; letter-spacing:-0.01em; font-weight:800; color:#0f172a; overflow-wrap:anywhere; }
     .person-name { color:#334155; font-size:18px; font-weight:700; }
     .movie-meta { color:#1e3a8a; font-size:13px; font-weight:700; }
@@ -71,7 +73,8 @@
       border-left:6px solid #fff;
     }
     .movie-empty { color:#475569; font-size:18px; font-weight:500; }
-    .cover { width:64px; height:96px; object-fit:cover; border-radius:10px; border:1px solid #cbd5e1; background:#e2e8f0; box-shadow:0 4px 10px rgba(15,23,42,.08); flex-shrink:0; }
+    .cover-btn { border:0; background:transparent; padding:0; margin:0; cursor:zoom-in; flex-shrink:0; border-radius:10px; }
+    .cover { width:64px; height:96px; object-fit:cover; border-radius:10px; border:1px solid #cbd5e1; background:#e2e8f0; box-shadow:0 4px 10px rgba(15,23,42,.08); flex-shrink:0; display:block; }
     .winner-hero { margin-top:14px; margin-bottom:16px; border-radius:18px; border:2px solid #86efac; background:linear-gradient(135deg, #ecfdf5, #ecfeff); box-shadow:0 14px 30px rgba(16,185,129,.18); padding:18px; }
     .winner-hero h3 { margin:0 0 6px; font-size:32px; line-height:1.05; letter-spacing:-0.02em; color:#065f46; }
     .winner-movie { display:block; font-size:44px; line-height:1.02; letter-spacing:-0.03em; font-weight:900; color:#064e3b; margin-bottom:6px; }
@@ -86,8 +89,11 @@
       .avatar { width:46px; height:46px; }
       .movie-title { font-size:20px; }
       .person-name, .movie-empty { font-size:17px; }
-      .cover { width:68px; height:102px; }
+      .entry-head { gap:8px; }
+      .cover { width:74px; height:110px; }
       .trailer-btn { font-size:12px; padding:6px 9px; }
+      .video-head { font-size:18px; }
+      .cover-modal-img { width:min(94vw, 420px); max-height:68vh; }
       .winner-hero h3 { font-size:26px; }
       .winner-movie { font-size:34px; }
       .winner-meta { font-size:16px; }
@@ -113,22 +119,29 @@
       box-shadow:0 20px 50px rgba(2,6,23,.55);
     }
     .video-head {
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      padding:10px 12px;
+      padding:10px 14px;
       background:#0f172a;
       color:#e2e8f0;
       font-weight:700;
+      font-size:20px;
+      line-height:1.2;
+      overflow-wrap:anywhere;
+    }
+    .video-actions {
+      padding:12px;
+      background:#0f172a;
+      display:flex;
+      justify-content:center;
     }
     .video-close {
       border:0;
       border-radius:10px;
-      padding:8px 10px;
+      padding:10px 16px;
       background:#1f2937;
       color:#f8fafc;
       cursor:pointer;
       font-weight:700;
+      min-width:160px;
     }
     .video-frame {
       width:100%;
@@ -136,6 +149,22 @@
       border:0;
       display:block;
       background:#000;
+    }
+    .cover-modal-img {
+      width:min(92vw, 520px);
+      max-height:72vh;
+      object-fit:contain;
+      border-radius:12px;
+      border:1px solid #334155;
+      background:#0b1220;
+      display:block;
+      margin:14px auto 0;
+    }
+    .cover-actions {
+      padding:12px 14px 14px;
+      display:flex;
+      justify-content:center;
+      background:#0f172a;
     }
   </style>
 </head>
@@ -211,10 +240,27 @@
                   {% if entry["attendance_status"] == status_not_coming %}
                     <span class="movie-empty">Ezen a héten jelezte, hogy nem tud jönni.</span>
                   {% else %}
-                    <span class="movie-title">{{ entry["movie_title"] }}</span>
-                    {% if entry["movie_category"] %}
-                      <span class="movie-meta">Kategória: {{ entry["movie_category"] }}</span>
-                    {% endif %}
+                    <div class="entry-head">
+                      <div class="entry-head-main">
+                        <span class="movie-title">{{ entry["movie_title"] }}</span>
+                        {% if entry["movie_category"] %}
+                          <span class="movie-meta">Kategória: {{ entry["movie_category"] }}</span>
+                        {% endif %}
+                      </div>
+                      {% if entry["poster_url"] %}
+                        {% set cover_src = entry["poster_url"] %}
+                        {% set cover_src = url_for('movie_cover_proxy', url=cover_src) %}
+                        <button
+                          type="button"
+                          class="cover-btn"
+                          data-cover-title="{{ entry['movie_title'] }}"
+                          data-cover-src="{{ cover_src }}"
+                          aria-label="Borító megnyitása"
+                        >
+                          <img class="cover" src="{{ cover_src }}" alt="{{ entry['movie_title'] }}">
+                        </button>
+                      {% endif %}
+                    </div>
                     {% if entry["movie_description"] %}
                       <span class="movie-description">{{ entry["movie_description"] }}</span>
                     {% endif %}
@@ -237,11 +283,6 @@
                   <span class="movie-empty">Még nincs beküldés.</span>
                 {% endif %}
               </div>
-              {% if entry and entry["attendance_status"] == status_coming and entry["poster_url"] %}
-                {% set cover_src = entry["poster_url"] %}
-                {% set cover_src = url_for('movie_cover_proxy', url=cover_src) %}
-                <img class="cover" src="{{ cover_src }}" alt="{{ entry['movie_title'] }}">
-              {% endif %}
             </div>
           {% endfor %}
         </div>
@@ -259,9 +300,22 @@
     <div class="video-shell">
       <div class="video-head">
         <span id="video-title">YouTube előzetes</span>
-        <button id="video-close" class="video-close" type="button">Bezárás</button>
       </div>
       <iframe id="video-frame" class="video-frame" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture"></iframe>
+      <div class="video-actions">
+        <button id="video-close" class="video-close" type="button">Bezárás</button>
+      </div>
+    </div>
+  </div>
+  <div id="cover-modal" class="video-modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="video-shell">
+      <div class="video-head">
+        <span id="cover-title">Film borító</span>
+      </div>
+      <img id="cover-modal-img" class="cover-modal-img" alt="Film borító">
+      <div class="cover-actions">
+        <button id="cover-close" class="video-close" type="button">Bezárás</button>
+      </div>
     </div>
   </div>
   <script>
@@ -279,39 +333,61 @@
 
       statusField.addEventListener("change", syncMovieInputState);
       syncMovieInputState();
-    })();
-
-    (function () {
-      const modal = document.getElementById("video-modal");
+    })();    (function () {
+      const videoModal = document.getElementById("video-modal");
       const frame = document.getElementById("video-frame");
       const title = document.getElementById("video-title");
-      const closeBtn = document.getElementById("video-close");
-      if (!modal || !frame || !title || !closeBtn) return;
-
-      function closeModal() {
+      const videoCloseBtn = document.getElementById("video-close");
+      const coverModal = document.getElementById("cover-modal");
+      const coverImg = document.getElementById("cover-modal-img");
+      const coverTitle = document.getElementById("cover-title");
+      const coverCloseBtn = document.getElementById("cover-close");
+      if (!videoModal || !frame || !title || !videoCloseBtn || !coverModal || !coverImg || !coverTitle || !coverCloseBtn) return;
+      function closeVideoModal() {
         frame.src = "";
-        modal.classList.remove("open");
-        modal.setAttribute("aria-hidden", "true");
+        videoModal.classList.remove("open");
+        videoModal.setAttribute("aria-hidden", "true");
       }
-
+      function closeCoverModal() {
+        coverImg.src = "";
+        coverModal.classList.remove("open");
+        coverModal.setAttribute("aria-hidden", "true");
+      }
       document.querySelectorAll(".trailer-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
           const src = btn.getAttribute("data-trailer-src");
           if (!src) return;
-          const movieTitle = btn.getAttribute("data-trailer-title") || "YouTube előzetes";
-          title.textContent = movieTitle + " – előzetes";
+          const movieTitle = btn.getAttribute("data-trailer-title") || "YouTube trailer";
+          title.textContent = movieTitle + " - trailer";
           frame.src = src + (src.includes("?") ? "&" : "?") + "autoplay=1";
-          modal.classList.add("open");
-          modal.setAttribute("aria-hidden", "false");
+          videoModal.classList.add("open");
+          videoModal.setAttribute("aria-hidden", "false");
         });
       });
-
-      closeBtn.addEventListener("click", closeModal);
-      modal.addEventListener("click", (event) => {
-        if (event.target === modal) closeModal();
+      document.querySelectorAll(".cover-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const src = btn.getAttribute("data-cover-src");
+          if (!src) return;
+          const movieTitle = btn.getAttribute("data-cover-title") || "Film borito";
+          coverTitle.textContent = movieTitle + " - borito";
+          coverImg.src = src;
+          coverImg.alt = movieTitle;
+          coverModal.classList.add("open");
+          coverModal.setAttribute("aria-hidden", "false");
+        });
+      });
+      videoCloseBtn.addEventListener("click", closeVideoModal);
+      coverCloseBtn.addEventListener("click", closeCoverModal);
+      videoModal.addEventListener("click", (event) => {
+        if (event.target === videoModal) closeVideoModal();
+      });
+      coverModal.addEventListener("click", (event) => {
+        if (event.target === coverModal) closeCoverModal();
       });
       document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && modal.classList.contains("open")) closeModal();
+        if (event.key !== "Escape") return;
+        if (videoModal.classList.contains("open")) closeVideoModal();
+        if (coverModal.classList.contains("open")) closeCoverModal();
       });
     })();
   </script>
