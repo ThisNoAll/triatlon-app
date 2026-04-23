@@ -1423,9 +1423,15 @@ def build_movie_night_memory_snapshot():
         if not cycle_key:
             continue
         if winner_name in MOVIE_NIGHT_ALLOWED_NAMES and winner_movie:
+            screening_date = cycle_key
+            try:
+                screening_date = movie_night_deadline(cycle_key).strftime("%Y-%m-%d")
+            except Exception:
+                screening_date = cycle_key
             winner_history.append(
                 {
                     "cycle_key": cycle_key,
+                    "screening_date": screening_date,
                     "winner_name": winner_name,
                     "winner_movie": winner_movie,
                 }

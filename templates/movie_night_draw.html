@@ -446,7 +446,7 @@
             <ul class="memory-list">
               {% if memory_snapshot and memory_snapshot["recent_winners"] %}
                 {% for row in memory_snapshot["recent_winners"] %}
-                  <li class="memory-row"><span>{{ row["cycle_key"] }}</span><span>{{ row["winner_name"] }} - {{ row["winner_movie"] }}</span></li>
+                  <li class="memory-row"><span>{{ row.get("screening_date", row["cycle_key"]) }}</span><span>{{ row["winner_name"] }} - {{ row["winner_movie"] }}</span></li>
                 {% endfor %}
               {% else %}
                 <li class="memory-row"><span>Még nincs lezárt hét.</span></li>
