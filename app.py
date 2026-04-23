@@ -1392,6 +1392,7 @@ def split_movie_category_tokens(value):
 
 def build_movie_night_memory_snapshot():
     current_cycle_key = movie_night_cycle_key()
+    current_cycle_date = datetime.strptime(current_cycle_key, "%Y-%m-%d").date()
     draws = query_all(
         """
         SELECT cycle_key, winner_name, winner_movie, created_at
@@ -1430,8 +1431,13 @@ def build_movie_night_memory_snapshot():
                 }
             )
             win_counts[winner_name] += 1
-            # Do not list currently active week in watched history.
-            if cycle_key != current_cycle_key and winner_movie not in watched_seen:
+            # Only list completed past cycles in watched history.
+            include_in_watched = False
+            try:
+                include_in_watched = datetime.strptime(cycle_key, "%Y-%m-%d").date() < current_cycle_date
+            except Exception:
+                include_in_watched = cycle_key != current_cycle_key
+            if include_in_watched and winner_movie not in watched_seen:
                 watched_seen.add(winner_movie)
                 watched_movies.append(
                     {
@@ -1474,12 +1480,18 @@ def build_movie_night_memory_snapshot():
         )[0]
         member_genre_focus.append({"name": name, "top_genre": top_genre, "count": top_count})
 
+    recent_winners = winner_history[:10]
+    wins_by_person = [{"name": name, "wins": win_counts.get(name, 0)} for name in MOVIE_NIGHT_ALLOWED_NAMES]
     return {
-        "winner_history": winner_history[:10],
-        "win_counts": [{"name": name, "wins": win_counts.get(name, 0)} for name in MOVIE_NIGHT_ALLOWED_NAMES],
+        # Primary keys used by template
+        "recent_winners": recent_winners,
+        "wins_by_person": wins_by_person,
         "challenge_archive": challenge_archive[:10],
         "member_genre_focus": member_genre_focus,
         "watched_movies": watched_movies[:18],
+        # Backward-compatible aliases
+        "winner_history": recent_winners,
+        "win_counts": wins_by_person,
     }
 
 
@@ -1929,9 +1941,84 @@ def fetch_movie_db_titles_for_genre(required_genre, force_refresh=False):
     if not required:
         return fetch_movie_db_titles(force_refresh=force_refresh)
 
+    def collect_titles_from_api_items(items, target, seen_keys):
+        for candidate in extract_movie_db_candidates_from_api(items):
+            title = cleanup_movie_display_title(candidate.get("title", ""))
+            key = normalize_movie_lookup_title(title)
+            if not key or key in seen_keys:
+                continue
+            if not movie_category_matches_required(candidate.get("movie_category", ""), required):
+                continue
+            seen_keys.add(key)
+            target.append(title)
+
+    def fetch_term_ids(taxonomy):
+        term_url = (
+            f"{MOVIE_DB_BASE_URL.rstrip('/')}/wp-json/wp/v2/{taxonomy}"
+            f"?search={quote_plus(required)}&per_page=100"
+        )
+        try:
+            items = fetch_json_url(term_url, timeout=8)
+        except Exception:
+            return []
+        term_ids = []
+        seen_ids = set()
+        for item in (items or []):
+            if not isinstance(item, dict):
+                continue
+            term_id = item.get("id")
+            if not isinstance(term_id, int):
+                continue
+            name = (item.get("name") or "").strip()
+            if not name:
+                continue
+            # Keep only terms that normalize to the required genre token.
+            if not movie_category_matches_required(name, required):
+                continue
+            if term_id in seen_ids:
+                continue
+            seen_ids.add(term_id)
+            term_ids.append(term_id)
+        return term_ids
+
+    titles = []
+    seen = set()
+
+    # 1) Strict taxonomy-based fetch (reliable for challenge weeks).
+    for taxonomy, param_name in (("categories", "categories"), ("tags", "tags")):
+        term_ids = fetch_term_ids(taxonomy)
+        if not term_ids:
+            continue
+        id_chunks = [term_ids[i : i + 20] for i in range(0, len(term_ids), 20)]
+        for chunk in id_chunks:
+            page = 1
+            while page <= 20:
+                posts_url = (
+                    f"{MOVIE_DB_BASE_URL.rstrip('/')}/wp-json/wp/v2/posts"
+                    f"?per_page=100&page={page}&_embed=1&{param_name}="
+                    + ",".join(str(x) for x in chunk)
+                )
+                try:
+                    posts = fetch_json_url(posts_url, timeout=10)
+                except urllib.error.HTTPError as http_err:
+                    if http_err.code in (400, 404):
+                        break
+                    raise
+                except Exception:
+                    break
+                if not isinstance(posts, list) or not posts:
+                    break
+                collect_titles_from_api_items(posts, titles, seen)
+                if len(posts) < 100:
+                    break
+                page += 1
+
+    if titles:
+        return sorted(titles)
+
+    # 2) Fallback: already cached index entries filtered by category text.
     entries = fetch_movie_db_index_entries(force_refresh=force_refresh)
     filtered = []
-    seen = set()
     for entry in entries:
         title = cleanup_movie_display_title(entry.get("title", ""))
         key = normalize_movie_lookup_title(title)
@@ -1941,8 +2028,16 @@ def fetch_movie_db_titles_for_genre(required_genre, force_refresh=False):
             continue
         seen.add(key)
         filtered.append(title)
+    if filtered:
+        return sorted(filtered)
 
-    return sorted(filtered)
+    # 3) Last fallback: direct genre search + strict category match.
+    try:
+        search_items = fetch_json_url(MOVIE_DB_API_SEARCH_URL.format(query=quote_plus(required)), timeout=8)
+        collect_titles_from_api_items(search_items, titles, seen)
+    except Exception:
+        pass
+    return sorted(titles)
 
 
 def extract_movie_db_detail_metadata(detail_html):

@@ -795,6 +795,61 @@ class TriatlonAppTests(unittest.TestCase):
         second_round = app_module.get_movie_night_challenge_order(1)
         self.assertNotEqual(first_round[-1], second_round[0])
 
+    def test_movie_night_watched_movies_excludes_current_cycle(self):
+        with self.app.app_context():
+            current_cycle = app_module.movie_night_cycle_key()
+            previous_cycle = (datetime.strptime(current_cycle, "%Y-%m-%d") - timedelta(days=7)).strftime(
+                "%Y-%m-%d"
+            )
+            app_module.execute(
+                """
+                INSERT INTO movie_night_draws (cycle_key, winner_name, winner_movie, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (current_cycle, "Peti", "Current Cycle Movie", "2026-04-24 10:00:00"),
+            )
+            app_module.execute(
+                """
+                INSERT INTO movie_night_draws (cycle_key, winner_name, winner_movie, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (previous_cycle, "Jakab", "Previous Cycle Movie", "2026-04-17 10:00:00"),
+            )
+
+            memory = app_module.build_movie_night_memory_snapshot()
+            watched = [row["movie_title"] for row in memory["watched_movies"]]
+            self.assertIn("Previous Cycle Movie", watched)
+            self.assertNotIn("Current Cycle Movie", watched)
+
+    def test_movie_night_genre_titles_filter_uses_wp_taxonomies(self):
+        original_fetch_json = app_module.fetch_json_url
+        original_fetch_index = app_module.fetch_movie_db_index_entries
+        try:
+            def fake_fetch_json(url, timeout=6):
+                if "/wp-json/wp/v2/categories" in url:
+                    return [{"id": 11, "name": "Sci-Fi"}]
+                if "/wp-json/wp/v2/tags" in url:
+                    return []
+                if "/wp-json/wp/v2/posts" in url and "categories=11" in url:
+                    return [
+                        {
+                            "title": {"rendered": "Interstellar"},
+                            "link": "http://movie.nhely.hu/interstellar/",
+                            "_embedded": {
+                                "wp:term": [[{"taxonomy": "category", "name": "Sci-Fi"}]],
+                            },
+                        }
+                    ]
+                return []
+
+            app_module.fetch_json_url = fake_fetch_json
+            app_module.fetch_movie_db_index_entries = lambda force_refresh=False: []
+            titles = app_module.fetch_movie_db_titles_for_genre("Sci-Fi", force_refresh=True)
+            self.assertIn("Interstellar", titles)
+        finally:
+            app_module.fetch_json_url = original_fetch_json
+            app_module.fetch_movie_db_index_entries = original_fetch_index
+
 if __name__ == "__main__":
     unittest.main()
 
