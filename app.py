@@ -1933,7 +1933,12 @@ def fetch_movie_db_titles_for_genre(required_genre, force_refresh=False):
         seen.add(key)
         filtered.append(title)
 
-    return sorted(filtered)
+    if filtered:
+        return sorted(filtered)
+
+    # Fallback: if genre metadata is missing/incomplete upstream,
+    # keep autocomplete usable instead of returning an empty list.
+    return fetch_movie_db_titles(force_refresh=force_refresh)
 
 
 def extract_movie_db_detail_metadata(detail_html):
