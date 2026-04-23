@@ -5,6 +5,7 @@ import random
 import unicodedata
 import uuid
 import urllib.request
+import urllib.error
 import html
 import time
 import difflib
@@ -135,6 +136,7 @@ MOVIE_DB_API_SEARCH_URL = "http://movie.nhely.hu/wp-json/wp/v2/posts?search={que
 MOVIE_DB_API_INDEX_SEARCH_URL = "http://movie.nhely.hu/wp-json/wp/v2/search?search={query}&per_page=20&type=post"
 MOVIE_DB_API_POST_DETAIL_URL = "http://movie.nhely.hu/wp-json/wp/v2/posts/{post_id}?_embed=1"
 MOVIE_DB_CACHE_SECONDS = 6 * 60 * 60
+MOVIE_DB_TITLES_CACHE_FILE = os.path.join(os.path.dirname(DB_PATH) or BASE_DIR, "movie_db_titles_cache.json")
 MOVIE_DB_TITLES_CACHE = {
     "fetched_at": 0.0,
     "titles": [],
@@ -1384,6 +1386,101 @@ def get_movie_night_draw(cycle_key):
     )
 
 
+def split_movie_category_tokens(value):
+    return [part.strip() for part in re.split(r"[,/;|]+", value or "") if part.strip()]
+
+
+def build_movie_night_memory_snapshot():
+    draws = query_all(
+        """
+        SELECT cycle_key, winner_name, winner_movie, created_at
+        FROM movie_night_draws
+        ORDER BY cycle_key DESC
+        """
+    )
+    entries = query_all(
+        """
+        SELECT cycle_key, participant_name, movie_title, movie_category
+        FROM movie_night_entries
+        WHERE attendance_status = ? AND movie_title != ''
+        ORDER BY cycle_key DESC
+        """,
+        (MOVIE_NIGHT_STATUS_COMING,),
+    )
+
+    winner_history = []
+    win_counts = {name: 0 for name in MOVIE_NIGHT_ALLOWED_NAMES}
+    watched_movies = []
+    watched_seen = set()
+    challenge_archive = []
+
+    for row in draws:
+        winner_name = (row["winner_name"] or "").strip()
+        winner_movie = (row["winner_movie"] or "").strip()
+        cycle_key = (row["cycle_key"] or "").strip()
+        if not cycle_key:
+            continue
+        if winner_name in MOVIE_NIGHT_ALLOWED_NAMES and winner_movie:
+            winner_history.append(
+                {
+                    "cycle_key": cycle_key,
+                    "winner_name": winner_name,
+                    "winner_movie": winner_movie,
+                }
+            )
+            win_counts[winner_name] += 1
+            if winner_movie not in watched_seen:
+                watched_seen.add(winner_movie)
+                watched_movies.append(
+                    {
+                        "movie_title": winner_movie,
+                        "winner_name": winner_name,
+                        "cycle_key": cycle_key,
+                    }
+                )
+
+        challenge = get_movie_night_challenge(cycle_key)
+        if challenge.get("enabled"):
+            challenge_archive.append(
+                {
+                    "cycle_key": cycle_key,
+                    "genre": challenge.get("genre", ""),
+                    "winner_movie": winner_movie if winner_name in MOVIE_NIGHT_ALLOWED_NAMES else "",
+                }
+            )
+
+    by_member_genres = {name: {} for name in MOVIE_NIGHT_ALLOWED_NAMES}
+    for row in entries:
+        name = row["participant_name"]
+        if name not in by_member_genres:
+            continue
+        category_tokens = split_movie_category_tokens(row["movie_category"] if "movie_category" in row.keys() else "")
+        if not category_tokens:
+            continue
+        for token in category_tokens:
+            by_member_genres[name][token] = by_member_genres[name].get(token, 0) + 1
+
+    member_genre_focus = []
+    for name in MOVIE_NIGHT_ALLOWED_NAMES:
+        genre_counts = by_member_genres[name]
+        if not genre_counts:
+            member_genre_focus.append({"name": name, "top_genre": "-", "count": 0})
+            continue
+        top_genre, top_count = sorted(
+            genre_counts.items(),
+            key=lambda item: (-item[1], normalize_genre_token(item[0])),
+        )[0]
+        member_genre_focus.append({"name": name, "top_genre": top_genre, "count": top_count})
+
+    return {
+        "winner_history": winner_history[:10],
+        "win_counts": [{"name": name, "wins": win_counts.get(name, 0)} for name in MOVIE_NIGHT_ALLOWED_NAMES],
+        "challenge_archive": challenge_archive[:10],
+        "member_genre_focus": member_genre_focus,
+        "watched_movies": watched_movies[:18],
+    }
+
+
 def fetch_text_url(url, timeout=4):
     request_obj = urllib.request.Request(url, headers=DEFAULT_HTTP_HEADERS)
     with urllib.request.urlopen(request_obj, timeout=timeout) as response:
@@ -1475,6 +1572,41 @@ def cleanup_movie_display_title(value):
     return title
 
 
+def load_movie_db_titles_from_disk_cache():
+    try:
+        if not os.path.isfile(MOVIE_DB_TITLES_CACHE_FILE):
+            return []
+        with open(MOVIE_DB_TITLES_CACHE_FILE, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if not isinstance(payload, list):
+            return []
+        cleaned = []
+        seen = set()
+        for item in payload:
+            title = " ".join(str(item or "").split()).strip()
+            if len(normalize_movie_lookup_title(title)) < 2:
+                continue
+            key = title.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(title)
+        return sorted(cleaned)
+    except Exception:
+        return []
+
+
+def save_movie_db_titles_to_disk_cache(titles):
+    try:
+        parent = os.path.dirname(MOVIE_DB_TITLES_CACHE_FILE)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(MOVIE_DB_TITLES_CACHE_FILE, "w", encoding="utf-8") as handle:
+            json.dump(list(titles or []), handle, ensure_ascii=False)
+    except Exception:
+        return
+
+
 def movie_titles_equivalent(input_title, candidate_title):
     n1 = normalize_movie_lookup_title(input_title)
     n2 = normalize_movie_lookup_title(candidate_title)
@@ -1534,12 +1666,22 @@ def fetch_movie_db_titles(force_refresh=False):
     ):
         return MOVIE_DB_TITLES_CACHE["titles"]
 
-    titles = {entry["title"] for entry in fetch_movie_db_index_entries(force_refresh=force_refresh)}
-    if not titles:
-        base_html = fetch_text_url(MOVIE_DB_BASE_URL, timeout=8)
-        titles = set(extract_movie_db_titles_from_html(base_html))
+    try:
+        titles = {entry["title"] for entry in fetch_movie_db_index_entries(force_refresh=force_refresh)}
+        if not titles:
+            base_html = fetch_text_url(MOVIE_DB_BASE_URL, timeout=8)
+            titles = set(extract_movie_db_titles_from_html(base_html))
+    except Exception:
+        fallback_titles = load_movie_db_titles_from_disk_cache()
+        if fallback_titles:
+            MOVIE_DB_TITLES_CACHE["titles"] = fallback_titles
+            MOVIE_DB_TITLES_CACHE["fetched_at"] = now_ts
+            return fallback_titles
+        raise
 
     cleaned_titles = sorted(title for title in titles if len(normalize_movie_lookup_title(title)) >= 2)
+    if cleaned_titles:
+        save_movie_db_titles_to_disk_cache(cleaned_titles)
     MOVIE_DB_TITLES_CACHE["titles"] = cleaned_titles
     MOVIE_DB_TITLES_CACHE["fetched_at"] = now_ts
     return cleaned_titles
@@ -1719,11 +1861,79 @@ def fetch_movie_db_index_entries(force_refresh=False):
     ):
         return MOVIE_DB_INDEX_CACHE["entries"]
 
-    base_html = fetch_text_url(MOVIE_DB_BASE_URL, timeout=10)
-    entries = extract_movie_db_index_entries(base_html)
+    entries = []
+    seen = set()
+
+    # Prefer WP JSON API because it includes categories needed for challenge-week filtering.
+    page = 1
+    per_page = 100
+    while page <= 20:
+        api_url = (
+            f"{MOVIE_DB_BASE_URL.rstrip('/')}/wp-json/wp/v2/posts"
+            f"?per_page={per_page}&page={page}&_embed=1"
+        )
+        try:
+            page_items = fetch_json_url(api_url, timeout=10)
+        except urllib.error.HTTPError as http_err:
+            if http_err.code in (400, 404):
+                break
+            raise
+        except Exception:
+            # Fall back to HTML scraper below.
+            entries = []
+            break
+
+        if not isinstance(page_items, list) or not page_items:
+            break
+
+        for candidate in extract_movie_db_candidates_from_api(page_items):
+            title = cleanup_movie_display_title(candidate.get("title", ""))
+            key = normalize_movie_lookup_title(title)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            entries.append(
+                {
+                    "title": title,
+                    "href": candidate.get("href", ""),
+                    "poster_url": candidate.get("poster_url", ""),
+                    "movie_category": candidate.get("movie_category", ""),
+                    "movie_description": candidate.get("movie_description", ""),
+                }
+            )
+
+        if len(page_items) < per_page:
+            break
+        page += 1
+
+    if not entries:
+        base_html = fetch_text_url(MOVIE_DB_BASE_URL, timeout=10)
+        entries = extract_movie_db_index_entries(base_html)
+
     MOVIE_DB_INDEX_CACHE["entries"] = entries
     MOVIE_DB_INDEX_CACHE["fetched_at"] = now_ts
     return entries
+
+
+def fetch_movie_db_titles_for_genre(required_genre, force_refresh=False):
+    required = (required_genre or "").strip()
+    if not required:
+        return fetch_movie_db_titles(force_refresh=force_refresh)
+
+    entries = fetch_movie_db_index_entries(force_refresh=force_refresh)
+    filtered = []
+    seen = set()
+    for entry in entries:
+        title = cleanup_movie_display_title(entry.get("title", ""))
+        key = normalize_movie_lookup_title(title)
+        if not key or key in seen:
+            continue
+        if not movie_category_matches_required(entry.get("movie_category", ""), required):
+            continue
+        seen.add(key)
+        filtered.append(title)
+
+    return sorted(filtered)
 
 
 def extract_movie_db_detail_metadata(detail_html):
@@ -4502,6 +4712,25 @@ def movie_night_draw():
     draw = draw or get_movie_night_draw(cycle_key)
     submitted_names = {row["participant_name"] for row in entries}
     missing_names = [name for name in MOVIE_NIGHT_ALLOWED_NAMES if name not in submitted_names]
+    if app.config.get("TESTING"):
+        memory_snapshot = {
+            "winner_history": [],
+            "win_counts": [{"name": name, "wins": 0} for name in MOVIE_NIGHT_ALLOWED_NAMES],
+            "challenge_archive": [],
+            "member_genre_focus": [{"name": name, "top_genre": "-", "count": 0} for name in MOVIE_NIGHT_ALLOWED_NAMES],
+            "watched_movies": [],
+        }
+        movie_db_titles = []
+    else:
+        memory_snapshot = build_movie_night_memory_snapshot()
+        movie_db_titles = []
+        try:
+            if challenge.get("enabled"):
+                movie_db_titles = sorted(fetch_movie_db_titles_for_genre(challenge.get("genre", "")))[:1200]
+            else:
+                movie_db_titles = sorted(fetch_movie_db_titles())[:1200]
+        except Exception:
+            movie_db_titles = []
 
     return render_template(
         "movie_night_draw.html",
@@ -4517,6 +4746,8 @@ def movie_night_draw():
         deadline_at_iso=deadline_at.strftime("%Y-%m-%dT%H:%M:%S"),
         missing_names=missing_names,
         challenge=challenge,
+        memory_snapshot=memory_snapshot,
+        movie_db_titles=movie_db_titles,
     )
 
 
