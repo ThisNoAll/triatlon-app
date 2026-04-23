@@ -1391,6 +1391,7 @@ def split_movie_category_tokens(value):
 
 
 def build_movie_night_memory_snapshot():
+    current_cycle_key = movie_night_cycle_key()
     draws = query_all(
         """
         SELECT cycle_key, winner_name, winner_movie, created_at
@@ -1429,7 +1430,8 @@ def build_movie_night_memory_snapshot():
                 }
             )
             win_counts[winner_name] += 1
-            if winner_movie not in watched_seen:
+            # Do not list currently active week in watched history.
+            if cycle_key != current_cycle_key and winner_movie not in watched_seen:
                 watched_seen.add(winner_movie)
                 watched_movies.append(
                     {
@@ -1761,6 +1763,8 @@ def extract_movie_db_candidates_from_api(items):
                     break
 
         term_groups = embedded.get("wp:term") or []
+        category_names = []
+        seen_terms = set()
         for group in term_groups:
             if not isinstance(group, list):
                 continue
@@ -1769,11 +1773,16 @@ def extract_movie_db_candidates_from_api(items):
                     continue
                 taxonomy = (term.get("taxonomy") or "").strip().lower()
                 name = (term.get("name") or "").strip()
-                if taxonomy == "category" and name:
-                    category = name
-                    break
-            if category:
-                break
+                if not name:
+                    continue
+                # movie.nhely uses WP terms variably (category/tag); keep both for genre matching
+                if taxonomy in ("category", "post_tag", "genre"):
+                    key = normalize_genre_token(name)
+                    if key and key not in seen_terms:
+                        seen_terms.add(key)
+                        category_names.append(name)
+        if category_names:
+            category = ", ".join(category_names)
 
         excerpt_obj = item.get("excerpt") or {}
         description = html.unescape(strip_html_tags(excerpt_obj.get("rendered") or "")).strip()
@@ -1933,12 +1942,7 @@ def fetch_movie_db_titles_for_genre(required_genre, force_refresh=False):
         seen.add(key)
         filtered.append(title)
 
-    if filtered:
-        return sorted(filtered)
-
-    # Fallback: if genre metadata is missing/incomplete upstream,
-    # keep autocomplete usable instead of returning an empty list.
-    return fetch_movie_db_titles(force_refresh=force_refresh)
+    return sorted(filtered)
 
 
 def extract_movie_db_detail_metadata(detail_html):
