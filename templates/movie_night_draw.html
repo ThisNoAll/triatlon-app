@@ -16,11 +16,65 @@
     .meta { display:flex; flex-wrap:wrap; gap:10px; margin:12px 0 0; }
     .pill { border-radius:999px; padding:6px 10px; font-size:13px; background:#eef2ff; color:#3730a3; font-weight:700; }
     .countdown-banner { margin:12px 0 4px; border:1px solid #bfdbfe; border-radius:12px; background:#eff6ff; color:#1e3a8a; padding:9px 12px; font-weight:800; font-size:14px; }
+    .countdown-banner.warn { border-color:#facc15; background:#fef9c3; color:#854d0e; }
+    .countdown-banner.danger { border-color:#fca5a5; background:#fee2e2; color:#991b1b; }
     .countdown-banner.closed { border-color:#fde68a; background:#fef3c7; color:#92400e; }
-    .challenge-banner { margin:14px 0 6px; border:2px solid #f59e0b; border-radius:14px; background:linear-gradient(135deg, #fffbeb, #fef3c7); padding:12px 14px; }
-    .challenge-title { margin:0 0 4px; font-size:20px; font-weight:900; color:#92400e; letter-spacing:-0.01em; }
-    .challenge-genre { display:inline-block; border-radius:999px; background:#0f172a; color:#fff; font-size:20px; font-weight:900; padding:6px 12px; }
-    .challenge-note { margin:8px 0 0; font-size:13px; font-weight:700; color:#78350f; }
+    .info-hub { margin:12px 0 6px; border:1px solid #bfdbfe; border-radius:14px; background:#f8fbff; padding:12px; box-shadow:0 8px 20px rgba(30,58,138,.06); }
+    .info-hub .rules-grid { margin:0; }
+    .info-hub .rule-chip { border:0; background:transparent; padding:0; }
+    .info-hub .meta { margin:10px 0 0; padding-top:10px; border-top:1px solid #dbeafe; }
+    .info-hub .pill { background:#e8efff; color:#1e40af; }
+    .info-hub .countdown-banner { margin:10px 0 0; font-size:18px; line-height:1.2; border-width:2px; }
+    .rules-grid { margin:12px 0 4px; }
+    .rule-chip { border:1px solid #dbeafe; border-radius:12px; background:#f8fbff; color:#1e3a8a; padding:10px 12px; font-size:13px; font-weight:700; line-height:1.5; }
+    .rule-chip strong { color:#0f172a; }
+    .rule-chip a { color:#1d4ed8; font-weight:900; }
+    .challenge-strip {
+      margin:12px 0 6px;
+      border:2px solid #f59e0b;
+      border-radius:14px;
+      padding:10px 12px;
+      position:relative;
+      overflow:hidden;
+      --bg-a:#fff7d6;
+      --bg-b:#fef3c7;
+      --fx-a:rgba(15,23,42,.10);
+      --fx-b:rgba(255,255,255,.22);
+      background:linear-gradient(135deg, var(--bg-a), var(--bg-b));
+    }
+    .challenge-strip::before {
+      content:"";
+      position:absolute;
+      inset:0;
+      background:
+        radial-gradient(140px 90px at 88% 20%, var(--fx-a), transparent 72%),
+        radial-gradient(190px 120px at 10% 88%, var(--fx-b), transparent 74%);
+      pointer-events:none;
+      opacity:.9;
+    }
+    .challenge-strip > * { position:relative; z-index:1; }
+    .challenge-theme-scifi { --bg-a:#e9f3ff; --bg-b:#dbeafe; --fx-a:rgba(30,64,175,.22); --fx-b:rgba(255,255,255,.25); }
+    .challenge-theme-akcio { --bg-a:#fff1f2; --bg-b:#ffe4e6; --fx-a:rgba(127,29,29,.20); --fx-b:rgba(255,255,255,.18); }
+    .challenge-theme-thriller { --bg-a:#f1f5f9; --bg-b:#e2e8f0; --fx-a:rgba(15,23,42,.25); --fx-b:rgba(255,255,255,.16); }
+    .challenge-theme-horror { --bg-a:#fee2e2; --bg-b:#fecaca; --fx-a:rgba(127,29,29,.30); --fx-b:rgba(255,255,255,.14); }
+    .challenge-theme-drama { --bg-a:#fef3c7; --bg-b:#fde68a; --fx-a:rgba(120,53,15,.22); --fx-b:rgba(255,255,255,.16); }
+    .challenge-theme-zene { --bg-a:#f5f3ff; --bg-b:#ede9fe; --fx-a:rgba(91,33,182,.22); --fx-b:rgba(255,255,255,.2); }
+    .challenge-theme-komedia { --bg-a:#ecfccb; --bg-b:#d9f99d; --fx-a:rgba(63,98,18,.22); --fx-b:rgba(255,255,255,.2); }
+    .challenge-theme-kaland { --bg-a:#fff7ed; --bg-b:#ffedd5; --fx-a:rgba(154,52,18,.20); --fx-b:rgba(255,255,255,.2); }
+    .challenge-theme-haborus { --bg-a:#f5f5f4; --bg-b:#e7e5e4; --fx-a:rgba(41,37,36,.24); --fx-b:rgba(255,255,255,.16); }
+    .challenge-theme-fantasy { --bg-a:#eef2ff; --bg-b:#e0e7ff; --fx-a:rgba(49,46,129,.24); --fx-b:rgba(255,255,255,.22); }
+    .challenge-theme-krimi { --bg-a:#f8fafc; --bg-b:#e2e8f0; --fx-a:rgba(30,41,59,.26); --fx-b:rgba(255,255,255,.14); }
+    .challenge-theme-animacio { --bg-a:#f0f9ff; --bg-b:#e0f2fe; --fx-a:rgba(14,116,144,.2); --fx-b:rgba(255,255,255,.22); }
+    .challenge-theme-csaladi { --bg-a:#f0fdf4; --bg-b:#dcfce7; --fx-a:rgba(22,101,52,.18); --fx-b:rgba(255,255,255,.24); }
+    .challenge-theme-western { --bg-a:#fffbeb; --bg-b:#fef3c7; --fx-a:rgba(120,53,15,.24); --fx-b:rgba(255,255,255,.16); }
+    .challenge-theme-romantikus { --bg-a:#fdf2f8; --bg-b:#fce7f3; --fx-a:rgba(157,23,77,.2); --fx-b:rgba(255,255,255,.24); }
+    .challenge-theme-mystery { --bg-a:#eef2ff; --bg-b:#e2e8f0; --fx-a:rgba(67,56,202,.22); --fx-b:rgba(255,255,255,.17); }
+    .challenge-top { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+    .challenge-flag { display:inline-flex; align-items:center; gap:6px; border-radius:999px; background:#7c2d12; color:#fff; font-size:11px; font-weight:900; letter-spacing:.06em; padding:4px 8px; }
+    .challenge-flag-dot { width:8px; height:8px; border-radius:50%; background:#facc15; }
+    .challenge-title { margin:0; font-size:24px; font-weight:900; color:#78350f; letter-spacing:-0.01em; }
+    .challenge-genre { display:inline-block; border-radius:999px; background:#0f172a; color:#fff; font-size:22px; font-weight:900; padding:7px 14px; }
+    .challenge-note { margin:6px 0 0; font-size:13px; font-weight:700; color:#78350f; }
     .flash { margin:12px 0; border-radius:12px; padding:10px 12px; font-weight:700; }
     .flash.success { background:var(--ok-bg); color:var(--ok); }
     .flash.info { background:#e0f2fe; color:#075985; }
@@ -33,12 +87,22 @@
     .checkbox-row input[type="checkbox"] { width:18px; height:18px; margin-top:2px; padding:0; flex-shrink:0; }
     .checkbox-label { margin:0; color:#0f172a; font-size:15px; font-weight:700; line-height:1.3; }
     .checkbox-help { margin:2px 0 0; color:#64748b; font-size:13px; line-height:1.35; }
+    .movie-input-help { margin:6px 0 0; color:#475569; font-size:13px; line-height:1.35; }
     .intro { margin-top:10px; }
     .intro strong { color:#0f172a; }
     .intro a { color:#1d4ed8; font-weight:700; }
     .section { margin-top:16px; border-top:1px solid var(--line); padding-top:16px; }
     .list { display:grid; gap:10px; width:100%; }
-    .item { border:1px solid var(--line); border-radius:14px; padding:10px 12px; background:#f8fafc; display:flex; align-items:center; gap:12px; width:100%; max-width:100%; min-width:0; }
+    .item { position:relative; border:1px solid var(--line); border-radius:14px; padding:10px 12px; background:#f8fafc; display:flex; align-items:center; gap:12px; width:100%; max-width:100%; min-width:0; }
+    .item.status-submitted { border-color:#86efac; background:#f0fdf4; }
+    .item.status-pending { border-color:#cbd5e1; background:#f8fafc; }
+    .item.status-absent { border-color:#fca5a5; background:#fff1f2; }
+    .item.status-winner { border-color:#facc15; background:linear-gradient(140deg, #fffbeb, #fef3c7); box-shadow:0 10px 24px rgba(245, 158, 11, 0.2); }
+    .status-badge { position:absolute; top:8px; right:10px; border-radius:999px; padding:3px 8px; font-size:11px; font-weight:900; letter-spacing:.03em; }
+    .status-badge.submitted { background:#dcfce7; color:#166534; }
+    .status-badge.pending { background:#e2e8f0; color:#475569; }
+    .status-badge.absent { background:#fee2e2; color:#b91c1c; }
+    .status-badge.winner { background:#fef3c7; color:#854d0e; }
     .avatar { width:52px; height:52px; border-radius:50%; object-fit:cover; border:2px solid #d7e2f0; background:#e2e8f0; flex-shrink:0; }
     .person { min-width:0; flex:1 1 auto; display:grid; gap:3px; }
     .entry-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
@@ -89,8 +153,16 @@
     .winner-hero h3 { margin:0 0 6px; font-size:32px; line-height:1.05; letter-spacing:-0.02em; color:#065f46; }
     .winner-movie { display:block; font-size:44px; line-height:1.02; letter-spacing:-0.03em; font-weight:900; color:#064e3b; margin-bottom:6px; }
     .winner-meta { margin:0; color:#065f46; font-size:18px; font-weight:700; }
-    .wait { margin-top:10px; border:1px solid #fde68a; background:var(--warn-bg); color:var(--warn); border-radius:12px; padding:10px 12px; font-weight:700; }
+    .wait { margin-top:16px; border:1px solid #fde68a; background:var(--warn-bg); color:var(--warn); border-radius:12px; padding:10px 12px; font-weight:700; }
     .small { font-size:13px; color:var(--muted); margin-top:8px; }
+    .memory-section { margin-top:20px; border-top:1px solid var(--line); padding-top:16px; }
+    .memory-grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); }
+    .memory-card { border:1px solid #dbe3ee; border-radius:12px; background:#f8fafc; padding:10px; }
+    .memory-card h3 { margin:0 0 8px; font-size:16px; color:#0f172a; }
+    .memory-list { margin:0; padding:0; list-style:none; display:grid; gap:6px; }
+    .memory-row { display:flex; justify-content:space-between; gap:8px; font-size:13px; color:#334155; }
+    .memory-inline { display:flex; flex-wrap:wrap; gap:6px; }
+    .memory-pill { border-radius:999px; border:1px solid #cbd5e1; background:#fff; color:#1e293b; font-size:12px; font-weight:700; padding:4px 8px; }
     @media (max-width:640px) {
       .wrap { padding:18px 10px 28px; }
       .card { padding:14px; }
@@ -102,9 +174,10 @@
       .entry-head { gap:8px; }
       .cover { width:74px; height:110px; }
       .trailer-btn { font-size:12px; padding:6px 9px; }
-      .challenge-title { font-size:18px; }
+      .challenge-title { font-size:20px; }
       .challenge-genre { font-size:18px; }
       .countdown-banner { font-size:13px; }
+      .status-badge { top:7px; right:8px; font-size:10px; }
       .video-head { font-size:18px; }
       .cover-modal-img { width:min(94vw, 420px); max-height:68vh; }
       .winner-hero h3 { font-size:26px; }
@@ -185,24 +258,42 @@
   <main class="wrap">
     <section class="card">
       <h1>Holt filmezők társasága</h1>
-      <p class="intro">
-        Peti, Jakab és Martin minden kedden filmestet tartanak. Aki jönni tud, az megad egy filmet; aki nem tud jönni, az ezt jelzi, és akkor nem kell filmet választania.
-        <strong>Kéthetente kihívás hét van:</strong> ilyenkor a beküldött filmnek meg kell felelnie az aktuális stílus-kihívásnak.
-        Amint mindhárman leadták a heti válaszukat, a rendszer kisorsol egy nyertest a beírt filmek közül.
-        Ha valaki legkésőbb kedd 17:00-ig nem reagál, a rendszer automatikusan úgy veszi, hogy nem tud jönni, és lezárja a heti sorsolást a beérkezett válaszok alapján (akár 1 fővel is).
-        <strong>Ha nem saját filmet hozol, akkor a filmet a következő DVD-gyűjteményből válaszd:</strong>
-        <strong><a href="http://movie.nhely.hu/" target="_blank" rel="noopener noreferrer">movie.nhely.hu (DVD-gyűjtemény)</a></strong>.
-        <strong>Saját film esetén kérjük, hogy a megfelelően működő adathordozót is hozd magaddal.</strong>
-      </p>
+      <div class="info-hub">
+        <div class="rules-grid">
+        <div class="rule-chip">
+          <strong>Kedd 17:00</strong> a leadási határidő. Utána lezár a heti sorsolás.<br>
+          <strong>Kéthetente kihívás hét:</strong> csak az aktuális stílusnak megfelelő film érvényes.<br>
+          <strong>Nem saját film esetén</strong> a forrás: <a href="http://movie.nhely.hu/" target="_blank" rel="noopener noreferrer">movie.nhely.hu (DVD-gyűjtemény)</a>.<br>
+          <strong>Saját filmnél</strong> hozd a működő adathordozót is.
+        </div>
+      </div>
       <div class="meta">
-        <span class="pill">Aktív hét kezdete: {{ cycle_key }}</span>
         <span class="pill">Heti határidő: {{ deadline_at }} (kedd)</span>
         <span class="pill">Következő újraindulás: {{ next_reset }} (szerda)</span>
       </div>
-      <div id="deadline-countdown" class="countdown-banner" data-deadline="{{ deadline_at_iso }}"></div>
+        <div id="deadline-countdown" class="countdown-banner" data-deadline="{{ deadline_at_iso }}"></div>
+      </div>
       {% if challenge and challenge["enabled"] %}
-        <div class="challenge-banner">
-          <p class="challenge-title">Kihívás hét</p>
+        {% set challenge_theme = "challenge-theme-scifi" if challenge["genre"] == "Sci-Fi" else
+                                 "challenge-theme-akcio" if challenge["genre"] == "Akció" else
+                                 "challenge-theme-thriller" if challenge["genre"] == "Thriller" else
+                                 "challenge-theme-horror" if challenge["genre"] == "Horror" else
+                                 "challenge-theme-drama" if challenge["genre"] == "Dráma" else
+                                 "challenge-theme-zene" if challenge["genre"] == "Zene" else
+                                 "challenge-theme-komedia" if challenge["genre"] == "Komédia" else
+                                 "challenge-theme-kaland" if challenge["genre"] == "Kaland" else
+                                 "challenge-theme-haborus" if challenge["genre"] == "Háborús" else
+                                 "challenge-theme-fantasy" if challenge["genre"] == "Fantasy" else
+                                 "challenge-theme-krimi" if challenge["genre"] == "Krimi" else
+                                 "challenge-theme-animacio" if challenge["genre"] == "Animáció" else
+                                 "challenge-theme-csaladi" if challenge["genre"] == "Családi" else
+                                 "challenge-theme-western" if challenge["genre"] == "Western" else
+                                 "challenge-theme-romantikus" if challenge["genre"] == "Romantikus" else
+                                 "challenge-theme-mystery" %}
+        <div class="challenge-strip {{ challenge_theme }}">
+          <div class="challenge-top">
+            <span class="challenge-flag"><span class="challenge-flag-dot"></span>Kihívás hét</span>
+          </div>
           <span class="challenge-genre">{{ challenge["genre"] }}</span>
           <p class="challenge-note">Ezen a héten csak ebben a kategóriában lehet filmet beküldeni.</p>
         </div>
@@ -253,7 +344,13 @@
           </div>
           <div>
             <label for="movie_title">Filmcím</label>
-            <input id="movie_title" name="movie_title" maxlength="140" required placeholder="Pl. Interstellar">
+            <input id="movie_title" name="movie_title" maxlength="140" required list="dvd-title-list" placeholder="Kezdd el írni a film címét...">
+            <p id="movie-title-help" class="movie-input-help">A javaslatok a movie.nhely.hu DVD-adatbázisából érkeznek.</p>
+            <datalist id="dvd-title-list">
+              {% for title in movie_db_titles %}
+                <option value="{{ title }}"></option>
+              {% endfor %}
+            </datalist>
           </div>
           <button type="submit">Jóváhagyás</button>
         </form>
@@ -264,7 +361,23 @@
         <div class="list">
           {% for name in allowed_names %}
             {% set entry = (entries | selectattr('participant_name', 'equalto', name) | list | first) %}
-            <div class="item">
+            {% set status_class = "status-pending" %}
+            {% set status_label = "Nincs válasz" %}
+            {% if entry %}
+              {% if entry["attendance_status"] == status_not_coming %}
+                {% set status_class = "status-absent" %}
+                {% set status_label = "Nem jön" %}
+              {% else %}
+                {% set status_class = "status-submitted" %}
+                {% set status_label = "Beadva" %}
+              {% endif %}
+            {% endif %}
+            {% if draw and entry and entry["participant_name"] == draw["winner_name"] and entry["movie_title"] == draw["winner_movie"] %}
+              {% set status_class = "status-winner" %}
+              {% set status_label = "Nyertes" %}
+            {% endif %}
+            <div class="item {{ status_class }}">
+              <span class="status-badge {{ status_class | replace('status-', '') }}">{{ status_label }}</span>
               <img class="avatar" src="{{ url_for('static', filename=avatar_files.get(name, 'team_avatars/avatar-01.svg')) }}" alt="{{ name }}">
               <div class="person">
                 {% if entry %}
@@ -325,6 +438,57 @@
           Várakozás a maradék beküldésekre: {{ missing_names | join(", ") }}
         </div>
       {% endif %}
+      <div class="memory-section">
+        <h2>Filmes memória</h2>
+        <div class="memory-grid">
+          <div class="memory-card">
+            <h3>Előző nyertesek</h3>
+            <ul class="memory-list">
+              {% if memory_snapshot and memory_snapshot["recent_winners"] %}
+                {% for row in memory_snapshot["recent_winners"] %}
+                  <li class="memory-row"><span>{{ row["cycle_key"] }}</span><span>{{ row["winner_name"] }} - {{ row["winner_movie"] }}</span></li>
+                {% endfor %}
+              {% else %}
+                <li class="memory-row"><span>Még nincs lezárt hét.</span></li>
+              {% endif %}
+            </ul>
+          </div>
+          <div class="memory-card">
+            <h3>Ki hányszor nyert</h3>
+            <ul class="memory-list">
+              {% if memory_snapshot and memory_snapshot["wins_by_person"] %}
+                {% for row in memory_snapshot["wins_by_person"] %}
+                  <li class="memory-row"><span>{{ row["name"] }}</span><span>{{ row["wins"] }} győzelem</span></li>
+                {% endfor %}
+              {% endif %}
+            </ul>
+          </div>
+          <div class="memory-card">
+            <h3>Challenge archívum</h3>
+            <ul class="memory-list">
+              {% if memory_snapshot and memory_snapshot["challenge_archive"] %}
+                {% for row in memory_snapshot["challenge_archive"] %}
+                  <li class="memory-row"><span>{{ row["cycle_key"] }}</span><span>{{ row["genre"] }}</span></li>
+                {% endfor %}
+              {% else %}
+                <li class="memory-row"><span>Még nincs challenge archívum.</span></li>
+              {% endif %}
+            </ul>
+          </div>
+          <div class="memory-card">
+            <h3>Megnézett filmek</h3>
+            <div class="memory-inline">
+              {% if memory_snapshot and memory_snapshot["watched_movies"] %}
+                {% for row in memory_snapshot["watched_movies"] %}
+                  <span class="memory-pill">{{ row["movie_title"] }}</span>
+                {% endfor %}
+              {% else %}
+                <span class="memory-pill">Még nincs lista.</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
       <p class="small">A sorsolás szerdánként automatikusan újraindul.</p>
     </section>
   </main>
@@ -369,10 +533,17 @@
       function renderCountdown() {
         const now = new Date();
         const diffMs = deadline.getTime() - now.getTime();
+        countdown.classList.remove("closed", "warn", "danger");
         if (diffMs <= 0) {
           countdown.classList.add("closed");
           countdown.textContent = "A heti leadási határidő lejárt. A sorsolás lezárult vagy lezárás alatt van.";
           return;
+        }
+
+        if (diffMs <= 2 * 60 * 60 * 1000) {
+          countdown.classList.add("danger");
+        } else if (diffMs <= 24 * 60 * 60 * 1000) {
+          countdown.classList.add("warn");
         }
 
         const totalSec = Math.floor(diffMs / 1000);
@@ -397,7 +568,27 @@
       const statusField = document.getElementById("attendance_status");
       const movieField = document.getElementById("movie_title");
       const customMovieField = document.getElementById("use_custom_movie");
-      if (!statusField || !movieField || !customMovieField) return;
+      const movieHelp = document.getElementById("movie-title-help");
+      if (!statusField || !movieField || !customMovieField || !movieHelp) return;
+
+      const dbPlaceholder = "Kezdd el írni a film címét...";
+      const customPlaceholder = "Pl. Interstellar";
+      const dbHelp = "A javaslatok a movie.nhely.hu DVD-adatbázisából érkeznek.";
+      const customHelp = "Saját filmnél szabad szöveg adható meg.";
+
+      function syncMovieMode() {
+        const canCome = statusField.value !== "{{ status_not_coming }}";
+        const customMode = canCome && customMovieField.checked;
+        if (customMode) {
+          movieField.removeAttribute("list");
+          movieField.placeholder = customPlaceholder;
+          movieHelp.textContent = customHelp;
+        } else {
+          movieField.setAttribute("list", "dvd-title-list");
+          movieField.placeholder = dbPlaceholder;
+          movieHelp.textContent = dbHelp;
+        }
+      }
 
       function syncMovieInputState() {
         const canCome = statusField.value !== "{{ status_not_coming }}";
@@ -406,11 +597,14 @@
         customMovieField.disabled = !canCome;
         if (!canCome) customMovieField.checked = false;
         if (!canCome) movieField.value = "";
+        syncMovieMode();
       }
 
       statusField.addEventListener("change", syncMovieInputState);
+      customMovieField.addEventListener("change", syncMovieMode);
       syncMovieInputState();
-    })();    (function () {
+    })();
+    (function () {
       const videoModal = document.getElementById("video-modal");
       const frame = document.getElementById("video-frame");
       const title = document.getElementById("video-title");
