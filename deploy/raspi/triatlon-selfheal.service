@@ -1,0 +1,9 @@
+[Unit]
+Description=Triatlon Self-Heal (health + funnel)
+After=network-online.target tailscaled.service triatlon.service nginx.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/triatlon-selfheal.sh
+User=root

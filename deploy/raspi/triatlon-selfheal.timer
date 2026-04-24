@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Triatlon self-heal periodically
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=triatlon-selfheal.service
+
+[Install]
+WantedBy=timers.target

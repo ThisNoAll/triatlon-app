@@ -127,6 +127,44 @@ Részletes leírás:
 - [deploy/oracle/triatlon.service](/abs/path/c:/PROJEKTEK/triatlon/deploy/oracle/triatlon.service)
 - [deploy/oracle/nginx-triatlon.conf](/abs/path/c:/PROJEKTEK/triatlon/deploy/oracle/nginx-triatlon.conf)
 
+## Raspberry Pi stabilitas (ajanlott)
+
+Ha Tailscale Funnelon keresztul publikusan ered el az oldalt, akkor ajanlott egy onjavito timer:
+
+- ellenorzi a `triatlon` es `nginx` service allapotat
+- ellenorzi a helyi health endpointot (`/healthz`) es a publikus oldalt
+- ujrabeallitja a Funnel configot, ha eltunt vagy rossz celra mutat
+
+Fajlok:
+
+- [deploy/raspi/triatlon-selfheal.sh](/abs/path/c:/PROJEKTEK/triatlon/deploy/raspi/triatlon-selfheal.sh)
+- [deploy/raspi/triatlon-selfheal.service](/abs/path/c:/PROJEKTEK/triatlon/deploy/raspi/triatlon-selfheal.service)
+- [deploy/raspi/triatlon-selfheal.timer](/abs/path/c:/PROJEKTEK/triatlon/deploy/raspi/triatlon-selfheal.timer)
+
+Telepites Raspberry Pi-n:
+
+```bash
+cd /opt/triatlon
+sudo cp deploy/raspi/triatlon-selfheal.sh /usr/local/bin/triatlon-selfheal.sh
+sudo chmod +x /usr/local/bin/triatlon-selfheal.sh
+sudo cp deploy/raspi/triatlon-selfheal.service /etc/systemd/system/triatlon-selfheal.service
+sudo cp deploy/raspi/triatlon-selfheal.timer /etc/systemd/system/triatlon-selfheal.timer
+sudo systemctl daemon-reload
+sudo systemctl enable triatlon nginx tailscaled
+sudo systemctl enable --now triatlon-selfheal.timer
+sudo systemctl start triatlon-selfheal.service
+```
+
+Gyors allapotellenorzes:
+
+```bash
+systemctl status triatlon --no-pager
+systemctl status nginx --no-pager
+systemctl status tailscaled --no-pager
+systemctl status triatlon-selfheal.timer --no-pager
+tailscale funnel status
+```
+
 ## Fontos megjegyzés
 
 Az alkalmazás jelenleg SQLite-ot használ. Kis-közepes forgalmú, egyszerű eseménykezeléshez ez még teljesen jó lehet, de érdemes rendszeresen menteni az adatbázist.
