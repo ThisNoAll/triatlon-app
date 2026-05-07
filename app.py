@@ -51,17 +51,23 @@ PERSIST_SUBDIR = (os.getenv("PERSIST_SUBDIR", "user-data").strip() or "user-data
 PERSIST_STATIC_DIR = os.path.join(BASE_DIR, "static", PERSIST_SUBDIR)
 
 
+def resolve_base_relative_path(raw_path):
+    expanded_path = os.path.expandvars(os.path.expanduser((raw_path or "").strip()))
+    if os.path.isabs(expanded_path):
+        return os.path.normpath(expanded_path)
+    return os.path.normpath(os.path.join(BASE_DIR, expanded_path))
+
+
 def resolve_database_path():
     configured_path = os.getenv("DATABASE_PATH", "").strip()
     if configured_path:
-        return configured_path
+        return resolve_base_relative_path(configured_path)
 
     database_url = os.getenv("DATABASE_URL", "").strip()
     if database_url.startswith("sqlite:///"):
         raw_path = database_url.replace("sqlite:///", "", 1)
-        if os.path.isabs(raw_path):
-            return raw_path
-        return os.path.join(BASE_DIR, raw_path)
+        if raw_path:
+            return resolve_base_relative_path(raw_path)
 
     return os.path.join(BASE_DIR, "triatlon.sqlite3")
 
